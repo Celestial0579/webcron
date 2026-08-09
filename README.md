@@ -44,9 +44,12 @@ Dann starten:
 ```bash
 docker run -d --name webcron --restart unless-stopped \
   -e TZ=Europe/Berlin \
+  -p 8080:8080 \
   -v "$PWD/jobs.cron:/config/jobs.cron:ro" \
   ghcr.io/celestial0579/webcron:latest
 ```
+
+Die Status-Übersicht ist danach unter `http://<host>:8080/` erreichbar.
 
 Oder mit Compose: [docker-compose.yml](docker-compose.yml) anpassen und
 `docker compose up -d`.
@@ -95,25 +98,26 @@ Als `OK` zählt jede 2xx- und 3xx-Antwort, alles andere als `FEHLER`
 (`HTTP 000` = Server gar nicht erreichbar).
 
 Zusätzlich liefert eine schreibgeschützte **Status-UI** eine Übersicht
-aller Jobs mit letztem Aufruf, Ergebnis und Fehlerzähler. Sie ist
-absichtlich nicht von außen erreichbar: Der Container veröffentlicht
-keinen Port. Wer sie sehen will, gibt sie bewusst frei — lokal per
-`-p 127.0.0.1:8080:8080` — oder schaut per
+aller Jobs mit letztem Aufruf, Ergebnis und Fehlerzähler:
+`http://<host>:8080/` (Port per `-p`/`ports:` veröffentlicht, siehe
+Schnellstart). Sie ist für den Blick aus dem eigenen Netz gedacht und
+hat bewusst keine Anmeldung — den Port also nicht ins Internet
+weiterreichen. Wer sie gar nicht will: `WEBCRON_UI_PORT=0` und die
+Port-Freigabe weglassen.
 
-```bash
-docker exec webcron curl -s http://127.0.0.1:8080/cgi-bin/status
-```
-
-hinein. Bearbeiten lässt sich dort nichts: Die Konfiguration ist die
-Datei, nicht der Container.
+Bearbeiten lässt sich dort nichts: Die Konfiguration ist die Datei,
+nicht der Container.
 
 ## Sicherheit
 
 - Tokens oder Geheimnisse in URLs erscheinen in Logs und Status-UI.
   Wo möglich, der Anwendung ein eigenes Cron-Token geben, das nichts
   anderes kann.
-- Der Container braucht keine Ports, keine besonderen Rechte und kein
-  beschreibbares Dateisystem außer `/run`, `/tmp` und `/etc/crontabs`.
+- Der einzige Port ist die Status-UI (ohne Anmeldung) — im LAN in
+  Ordnung, aber nicht ins Internet weiterreichen. Ohne UI
+  (`WEBCRON_UI_PORT=0`) braucht der Container gar keinen Port.
+- Sonst keine besonderen Rechte und kein beschreibbares Dateisystem
+  außer `/run`, `/tmp` und `/etc/crontabs`.
 
 ## Tests
 
