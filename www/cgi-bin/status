@@ -3,6 +3,8 @@
 # jeweils letzten Aufruf. Bewusst ohne Bearbeiten-Funktion — die
 # Konfiguration ist die Datei jobs.cron, nicht der Container.
 set -u
+# Kein Globbing: Kopfzeilen-Werte werden unten in Woerter zerlegt.
+set -f
 
 LAUFDIR="${WEBCRON_LAUFDIR:-/run/webcron}"
 JOBS="$LAUFDIR/jobs.tsv"
@@ -43,9 +45,15 @@ fi
 echo "<p class=\"meta\">Zeitzone: $(html_schutz "${TZ:-UTC}") &middot; Stand: $(date '+%Y-%m-%d %H:%M:%S') &middot; Seite aktualisiert sich alle 30&nbsp;s</p>"
 echo '<table><tr><th>Zeitplan</th><th>URL</th><th>Letzter Aufruf</th><th>Ergebnis</th><th>Dauer</th><th>OK</th><th>Fehler</th></tr>'
 
-while IFS="$TAB" read -r plan url; do
+while IFS="$TAB" read -r plan url koepfe; do
     url_html=$(html_schutz "$url")
     plan_html=$(html_schutz "$plan")
+    # Kopfzeilen: nur die Namen zeigen — die Werte sind Secrets.
+    kopf_namen=""
+    for kopf in $koepfe; do
+        kopf_namen="$kopf_namen ${kopf%%:*}"
+    done
+    [ -n "$kopf_namen" ] && url_html="$url_html<br><small>Header:$(html_schutz "$kopf_namen")</small>"
     kennung=$(printf '%s' "$url" | md5sum | cut -d' ' -f1)
     if [ -f "$STATUS/$kennung" ]; then
         IFS="$TAB" read -r zeit code dauer ergebnis ok_anzahl fehler_anzahl < "$STATUS/$kennung"

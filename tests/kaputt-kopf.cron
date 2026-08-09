@@ -1,0 +1,3 @@
+# Absichtlich kaputt: 'Ohne_Doppelpunkt' ist keine Kopfzeile — die
+# Pruefung muss ablehnen.
+0 0 1 1 *  http://ziel/kopf  Ohne_Doppelpunkt

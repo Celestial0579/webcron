@@ -12,7 +12,10 @@
 #                       sobald ein Aufruf scheitert (fuer Probelaeufe/Tests)
 #
 # Konfiguration: /config/jobs.cron (WEBCRON_JOBS), eine Zeile je Aufruf:
-#   <Minute> <Stunde> <Monatstag> <Monat> <Wochentag> <URL>
+#   <Minute> <Stunde> <Monatstag> <Monat> <Wochentag> <URL> [Name:Wert ...]
+# Alles nach der URL sind HTTP-Kopfzeilen, z. B. X-Cron-Secret:abc123 —
+# der richtige Platz fuer Secrets, denn anders als der Query-String tauchen
+# Kopfzeilen nicht in Access-Logs auf.
 set -eu
 # Kein Globbing: Cron-Felder wie '*' werden unten per `set --` in Woerter
 # zerlegt und wuerden sonst zu Dateinamen expandieren.
@@ -32,8 +35,8 @@ case "$MODUS" in
 esac
 
 [ -f "$JOBS" ] || fehler "Konfiguration fehlt: $JOBS
-Eine Datei mit Zeilen '<5 Cron-Felder> <URL>' dorthin mounten,
-Vorlage: jobs.example.cron im Repo."
+Eine Datei mit Zeilen '<5 Cron-Felder> <URL> [Name:Wert ...]' dorthin
+mounten, Vorlage: jobs.example.cron im Repo."
 
 # Ein Cron-Feld: Ziffern, '*', ',', '-', '/' — mehr versteht busybox-crond
 # nicht. Geprueft wird der Zeichenvorrat, nicht der Wertebereich; eine
@@ -44,9 +47,28 @@ ist_cronfeld() {
     esac
 }
 
+# Eine Kopfzeile: Name:Wert. Der Name wie in HTTP ueblich (Buchstaben,
+# Ziffern, '-'), der Wert beliebig, aber ohne Leerzeichen (die Zeile ist
+# schon in Woerter zerlegt) und ohne Hochkomma (wegen der Crontab-Quotung).
+ist_kopfzeile() {
+    case "$1" in
+        *"'"*) return 1 ;;
+        *:*) ;;
+        *) return 1 ;;
+    esac
+    name="${1%%:*}"
+    case "$name" in
+        "" | *[!A-Za-z0-9-]*) return 1 ;;
+    esac
+    [ -n "${1#*:}" ]
+}
+
+# '%' bedeutet in einer Crontab Zeilenumbruch und muss geschuetzt werden.
+krontauglich() { printf '%s' "$1" | sed 's/%/\\%/g'; }
+
 # Liest $JOBS, prueft jede Zeile und schreibt eine Crontab nach $1 sowie
-# die Jobliste (Zeitplan<TAB>URL) nach $2. Bricht bei der ersten kaputten
-# Zeile ab — ein halber Zeitplan waere schlimmer als keiner.
+# die Jobliste (Zeitplan<TAB>URL<TAB>Kopfzeilen) nach $2. Bricht bei der
+# ersten kaputten Zeile ab — ein halber Zeitplan waere schlimmer als keiner.
 uebersetze() {
     ziel="$1"
     jobliste="$2"
@@ -61,11 +83,11 @@ uebersetze() {
 
         # shellcheck disable=SC2086
         set -- $rest
-        [ $# -eq 6 ] || fehler "$JOBS Zeile $nr: erwartet '<5 Cron-Felder> <URL>', gefunden: $zeile"
-        for feld in "$1" "$2" "$3" "$4" "$5"; do
+        [ $# -ge 6 ] || fehler "$JOBS Zeile $nr: erwartet '<5 Cron-Felder> <URL> [Name:Wert ...]', gefunden: $zeile"
+        min="$1"; std="$2"; tag="$3"; monat="$4"; wt="$5"; url="$6"
+        for feld in "$min" "$std" "$tag" "$monat" "$wt"; do
             ist_cronfeld "$feld" || fehler "$JOBS Zeile $nr: '$feld' ist kein Cron-Feld (erlaubt: Ziffern * , - /)"
         done
-        url="$6"
         case "$url" in
             http://*|https://*) ;;
             *) fehler "$JOBS Zeile $nr: URL muss mit http:// oder https:// beginnen: $url" ;;
@@ -74,11 +96,17 @@ uebersetze() {
             *"'"*) fehler "$JOBS Zeile $nr: Hochkomma in der URL wird nicht unterstuetzt" ;;
         esac
 
-        # '%' bedeutet in einer Crontab Zeilenumbruch und muss geschuetzt werden.
-        krontauglich=$(printf '%s' "$url" | sed 's/%/\\%/g')
-        printf '%s %s %s %s %s webcron-abruf '\''%s'\''\n' \
-            "$1" "$2" "$3" "$4" "$5" "$krontauglich" >> "$ziel"
-        printf '%s %s %s %s %s\t%s\n' "$1" "$2" "$3" "$4" "$5" "$url" >> "$jobliste"
+        shift 6
+        aufruf="webcron-abruf '$(krontauglich "$url")'"
+        koepfe=""
+        for kopf in "$@"; do
+            ist_kopfzeile "$kopf" || fehler "$JOBS Zeile $nr: '$kopf' ist keine Kopfzeile (Form Name:Wert, ohne Leerzeichen und Hochkomma)"
+            aufruf="$aufruf '$(krontauglich "$kopf")'"
+            koepfe="$koepfe$kopf "
+        done
+
+        printf '%s %s %s %s %s %s\n' "$min" "$std" "$tag" "$monat" "$wt" "$aufruf" >> "$ziel"
+        printf '%s %s %s %s %s\t%s\t%s\n' "$min" "$std" "$tag" "$monat" "$wt" "$url" "$koepfe" >> "$jobliste"
         anzahl=$((anzahl + 1))
     done < "$JOBS"
     [ "$anzahl" -gt 0 ] || fehler "$JOBS enthaelt keinen einzigen Job"
@@ -98,8 +126,11 @@ case "$MODUS" in
     --einmal)
         echo "webcron: rufe jede der $anzahl URL(s) einmal auf"
         fehlschlaege=0
-        while IFS="$(printf '\t')" read -r _ url; do
-            webcron-abruf "$url" || fehlschlaege=$((fehlschlaege + 1))
+        while IFS="$(printf '\t')" read -r _ url koepfe; do
+            # Kopfzeilen enthalten weder Leerzeichen noch Glob-Zeichen —
+            # das Aufteilen in Woerter ist hier Absicht.
+            # shellcheck disable=SC2086
+            webcron-abruf "$url" $koepfe || fehlschlaege=$((fehlschlaege + 1))
         done < "$JOBLISTE_NEU"
         rm -f "$CRONTAB_NEU" "$JOBLISTE_NEU"
         [ "$fehlschlaege" -eq 0 ] || fehler "$fehlschlaege von $anzahl Aufruf(en) fehlgeschlagen"

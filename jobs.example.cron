@@ -1,9 +1,12 @@
 # webcron-Konfiguration: eine Zeile je Aufruf.
 #
-#   <Minute> <Stunde> <Monatstag> <Monat> <Wochentag> <URL>
+#   <Minute> <Stunde> <Monatstag> <Monat> <Wochentag> <URL> [Name:Wert ...]
 #
 # Cron-Syntax wie gewohnt (*, Listen 1,15, Bereiche 1-5, Schritte */5).
 # Die URL darf keine Leerzeichen und keine Hochkommas enthalten.
+# Alles nach der URL sind HTTP-Kopfzeilen (Name:Wert, ohne Leerzeichen) —
+# der richtige Platz fuer Secrets, denn anders als der Query-String tauchen
+# Kopfzeilen nicht in Access-Logs auf.
 # Die Zeiten gelten in der Zeitzone des Containers (Umgebungsvariable TZ).
 
 # WordPress: wp-cron alle 5 Minuten
@@ -11,6 +14,10 @@
 
 # Nextcloud: Hintergrundjobs alle 5 Minuten
 #*/5 * * * *  https://cloud.example.com/cron.php
+
+# Hengstverzeichnis-Framework: Scheduler alle 5 Minuten anstossen —
+# das Secret kommt aus den Cron-Einstellungen im Admin-Bereich
+#*/5 * * * *  https://hengste.example.com/cron/run  X-Cron-Secret:GEHEIM
 
 # Shop-Export jede Nacht um 03:30
 #30 3 * * *  https://shop.example.com/export/nightly?token=GEHEIM
