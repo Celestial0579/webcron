@@ -1,0 +1,2 @@
+# Absichtlich kaputt: nur vier Cron-Felder — die Pruefung muss ablehnen.
+* * * *  https://example.com/cron

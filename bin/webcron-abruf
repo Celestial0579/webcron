@@ -1,0 +1,56 @@
+#!/bin/sh
+# Ruft eine einzelne Cronjob-URL auf, protokolliert das Ergebnis und
+# schreibt den Stand fuer die Status-UI fort. Wird von crond je
+# Zeitplan-Takt gestartet.
+set -u
+
+URL="${1:?Aufruf: webcron-abruf <url>}"
+TIMEOUT="${WEBCRON_TIMEOUT:-60}"
+VERSUCHE="${WEBCRON_VERSUCHE:-2}"
+AGENT="${WEBCRON_USER_AGENT:-webcron (+https://github.com/Celestial0579/webcron)}"
+STATUSDIR="${WEBCRON_LAUFDIR:-/run/webcron}/status"
+
+# crond reicht die Ausgabe seiner Jobs nirgendwohin weiter — geloggt wird
+# deshalb direkt auf stdout/stderr von PID 1, denn dort lesen die
+# Container-Logs mit. Ausserhalb eines Containers: gewoehnliches stdout.
+OUT=/proc/1/fd/1
+ERR=/proc/1/fd/2
+[ -w "$OUT" ] || { OUT=/dev/stdout; ERR=/dev/stderr; }
+
+start=$(date +%s)
+code=$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
+    --location --max-time "$TIMEOUT" \
+    --retry "$VERSUCHE" --retry-connrefused \
+    --user-agent "$AGENT" "$URL" 2>>"$ERR") || code=000
+dauer=$(( $(date +%s) - start ))
+zeit=$(date '+%Y-%m-%d %H:%M:%S')
+
+case "$code" in
+    2*|3*) ergebnis=OK ;;
+    *)     ergebnis=FEHLER ;;
+esac
+
+# Stand fuer die Status-UI: eine Datei je URL, benannt nach ihrem Hash.
+# Format: Zeit, HTTP-Code, Dauer, Ergebnis, Zaehler OK, Zaehler Fehler.
+mkdir -p "$STATUSDIR"
+kennung=$(printf '%s' "$URL" | md5sum | cut -d' ' -f1)
+ok_bisher=0
+fehler_bisher=0
+if [ -f "$STATUSDIR/$kennung" ]; then
+    IFS="$(printf '\t')" read -r _ _ _ _ ok_bisher fehler_bisher < "$STATUSDIR/$kennung" || true
+fi
+if [ "$ergebnis" = OK ]; then
+    ok_bisher=$((ok_bisher + 1))
+else
+    fehler_bisher=$((fehler_bisher + 1))
+fi
+printf '%s\t%s\t%s\t%s\t%s\t%s\n' \
+    "$zeit" "$code" "$dauer" "$ergebnis" "$ok_bisher" "$fehler_bisher" \
+    > "$STATUSDIR/$kennung"
+
+if [ "$ergebnis" = OK ]; then
+    echo "$zeit  OK      HTTP $code  ${dauer}s  $URL" >> "$OUT"
+else
+    echo "$zeit  FEHLER  HTTP $code  ${dauer}s  $URL" >> "$ERR"
+    exit 1
+fi

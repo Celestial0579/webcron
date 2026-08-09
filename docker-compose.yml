@@ -1,0 +1,19 @@
+# Betriebsbeispiel: jobs.example.cron nach jobs.cron kopieren, anpassen,
+# dann `docker compose up -d`.
+services:
+  webcron:
+    image: ghcr.io/celestial0579/webcron:latest
+    container_name: webcron
+    restart: unless-stopped
+    environment:
+      TZ: Europe/Berlin
+      # WEBCRON_TIMEOUT: 60      # Sekunden je Aufruf
+      # WEBCRON_VERSUCHE: 2      # curl-Wiederholungen bei Netzfehlern
+      # WEBCRON_UI_PORT: 0       # Status-UI abschalten
+    volumes:
+      - ./jobs.cron:/config/jobs.cron:ro
+    # Status-UI: gedacht fuer den Blick aus dem eigenen Netz. Sie hat
+    # keine Anmeldung — der Port gehoert deshalb hinter die Firewall des
+    # Hosts, nicht ins Internet weitergereicht.
+    ports:
+      - "8080:8080"

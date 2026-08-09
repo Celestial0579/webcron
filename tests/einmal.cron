@@ -1,0 +1,3 @@
+# Fuer den Einmal-Modus-Test: eigener Pfad, damit sich der Aufruf in den
+# Logs vom minuetlichen Takt unterscheiden laesst.
+0 0 1 1 *  http://ziel/einmal

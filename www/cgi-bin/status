@@ -1,0 +1,60 @@
+#!/bin/sh
+# Status-UI: eine schreibgeschuetzte Uebersicht aller Jobs mit dem
+# jeweils letzten Aufruf. Bewusst ohne Bearbeiten-Funktion — die
+# Konfiguration ist die Datei jobs.cron, nicht der Container.
+set -u
+
+LAUFDIR="${WEBCRON_LAUFDIR:-/run/webcron}"
+JOBS="$LAUFDIR/jobs.tsv"
+STATUS="$LAUFDIR/status"
+TAB="$(printf '\t')"
+
+html_schutz() {
+    printf '%s' "$1" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g'
+}
+
+printf 'Content-Type: text/html; charset=utf-8\r\n\r\n'
+cat <<'KOPF'
+<!DOCTYPE html>
+<html lang="de"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="refresh" content="30">
+<title>webcron</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 2rem; color: #222; }
+  h1 { font-size: 1.4rem; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { padding: .4rem .8rem; border-bottom: 1px solid #ccc; text-align: left; }
+  th { background: #f2f2f2; }
+  td.url { font-family: monospace; word-break: break-all; }
+  .ok { color: #0a7d33; font-weight: 600; }
+  .fehler { color: #b00020; font-weight: 600; }
+  .nie { color: #777; }
+  p.meta { color: #555; }
+</style></head><body>
+<h1>webcron — Status</h1>
+KOPF
+
+if [ ! -s "$JOBS" ]; then
+    echo '<p>Keine Jobs geladen.</p></body></html>'
+    exit 0
+fi
+
+echo "<p class=\"meta\">Zeitzone: $(html_schutz "${TZ:-UTC}") &middot; Stand: $(date '+%Y-%m-%d %H:%M:%S') &middot; Seite aktualisiert sich alle 30&nbsp;s</p>"
+echo '<table><tr><th>Zeitplan</th><th>URL</th><th>Letzter Aufruf</th><th>Ergebnis</th><th>Dauer</th><th>OK</th><th>Fehler</th></tr>'
+
+while IFS="$TAB" read -r plan url; do
+    url_html=$(html_schutz "$url")
+    plan_html=$(html_schutz "$plan")
+    kennung=$(printf '%s' "$url" | md5sum | cut -d' ' -f1)
+    if [ -f "$STATUS/$kennung" ]; then
+        IFS="$TAB" read -r zeit code dauer ergebnis ok_anzahl fehler_anzahl < "$STATUS/$kennung"
+        klasse=fehler
+        [ "$ergebnis" = OK ] && klasse=ok
+        echo "<tr><td>$plan_html</td><td class=\"url\">$url_html</td><td>$zeit</td><td class=\"$klasse\">$ergebnis (HTTP $code)</td><td>${dauer}s</td><td>$ok_anzahl</td><td>$fehler_anzahl</td></tr>"
+    else
+        echo "<tr><td>$plan_html</td><td class=\"url\">$url_html</td><td class=\"nie\" colspan=\"5\">noch kein Aufruf</td></tr>"
+    fi
+done < "$JOBS"
+
+echo '</table></body></html>'
