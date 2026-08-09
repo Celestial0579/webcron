@@ -66,10 +66,24 @@ Nur die Konfiguration prüfen, ohne irgendetwas aufzurufen: `--pruefen`.
 
 ## Konfiguration
 
-Eine Zeile je Aufruf: fünf Cron-Felder, dann die URL. Kommentare (`#`)
-und Leerzeilen sind erlaubt. Die URL darf keine Leerzeichen und keine
-Hochkommas enthalten. Kaputte Zeilen lehnt der Container beim Start
-komplett ab — ein halber Zeitplan wäre schlimmer als keiner.
+Eine Zeile je Aufruf: fünf Cron-Felder, die URL, danach optional
+HTTP-Kopfzeilen als `Name:Wert`. Kommentare (`#`) und Leerzeilen sind
+erlaubt. Kaputte Zeilen lehnt der Container beim Start komplett ab —
+ein halber Zeitplan wäre schlimmer als keiner.
+
+```
+# Endpunkt, der sein Secret als Header erwartet (z. B. das
+# Hengstverzeichnis-Framework unter /cron/run):
+*/5 * * * *  https://hengste.example.com/cron/run  X-Cron-Secret:GEHEIM
+```
+
+Kopfzeilen sind der richtige Platz für Secrets: Anders als der
+Query-String tauchen sie nicht in Access- und Proxy-Logs auf. Grenzen
+der Syntax: Weder URL noch Kopfzeilen dürfen Leerzeichen oder
+Hochkommas enthalten — `Authorization: Bearer <token>` (mit Leerzeichen
+im Wert) geht deshalb nicht; Endpunkte mit eigenem Header wie
+`X-Cron-Secret` sind der vorgesehene Weg. In der Status-UI erscheinen
+nur die Namen mitgesendeter Kopfzeilen, nie ihre Werte.
 
 Nach einer Änderung an `jobs.cron` den Container neu starten
 (`docker restart webcron`); die Datei wird beim Start gelesen.

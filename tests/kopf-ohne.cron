@@ -1,0 +1,4 @@
+# Gegenprobe zum Kopfzeilen-Test: ohne X-Cron-Secret antwortet /kopf
+# mit 403 — der Aufruf muss als FEHLER gewertet werden. Das belegt, dass
+# der 200er im Kopfzeilen-Test wirklich von der Kopfzeile kommt.
+0 0 1 1 *  http://ziel/kopf

@@ -75,6 +75,8 @@ pruefe_scheitert "kaputte Konfiguration wird abgelehnt" \
     "${COMPOSE[@]}" run --rm --no-deps -e WEBCRON_JOBS=/tests/kaputt.cron webcron --pruefen
 pruefe_scheitert "fehlende Konfiguration fuehrt zum Abbruch" \
     "${COMPOSE[@]}" run --rm --no-deps -e WEBCRON_JOBS=/gibts/nicht webcron --pruefen
+pruefe_scheitert "kaputte Kopfzeile wird abgelehnt" \
+    "${COMPOSE[@]}" run --rm --no-deps -e WEBCRON_JOBS=/tests/kaputt-kopf.cron webcron --pruefen
 
 echo
 echo "--- Einmal-Modus ---"
@@ -82,6 +84,10 @@ pruefe "erreichbare URL wird als OK gewertet" \
     "${COMPOSE[@]}" run --rm -e WEBCRON_JOBS=/tests/einmal.cron webcron --einmal
 pruefe_scheitert "HTTP 404 wird als Fehler gewertet" \
     "${COMPOSE[@]}" run --rm -e WEBCRON_JOBS=/tests/fehl.cron webcron --einmal
+pruefe "Kopfzeile wird mitgesendet (Ziel verlangt X-Cron-Secret)" \
+    "${COMPOSE[@]}" run --rm -e WEBCRON_JOBS=/tests/kopf.cron webcron --einmal
+pruefe_scheitert "Gegenprobe: ohne Kopfzeile lehnt das Ziel mit 403 ab" \
+    "${COMPOSE[@]}" run --rm -e WEBCRON_JOBS=/tests/kopf-ohne.cron webcron --einmal
 
 echo
 echo "--- crond-Betrieb (warte auf den ersten Takt, bis zu 90 s) ---"
@@ -90,9 +96,13 @@ for _ in $(seq 1 90); do
     if log_enthaelt ziel 'GET /takt'; then getroffen=ja; break; fi
     sleep 1
 done
+# Beide Jobs feuern in derselben Minute; dem zweiten einen Moment geben.
+sleep 3
 pruefe "crond ruft die URL nach Zeitplan auf" test -n "$getroffen"
 pruefe "der Aufruf steht als OK in den Container-Logs" \
     log_enthaelt webcron 'OK  *HTTP 200 .* http://ziel/takt'
+pruefe "auch der Kopfzeilen-Job kommt durch die Crontab (HTTP 200 auf /kopf)" \
+    log_enthaelt webcron 'OK  *HTTP 200 .* http://ziel/kopf'
 
 echo
 echo "--- Status-UI ---"

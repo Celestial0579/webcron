@@ -1,0 +1,3 @@
+# Fuer den Kopfzeilen-Test: das Ziel antwortet auf /kopf nur mit 200,
+# wenn X-Cron-Secret mit dem richtigen Wert mitkommt.
+0 0 1 1 *  http://ziel/kopf  X-Cron-Secret:geheim

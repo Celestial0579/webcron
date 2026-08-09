@@ -2,9 +2,22 @@
 # Ruft eine einzelne Cronjob-URL auf, protokolliert das Ergebnis und
 # schreibt den Stand fuer die Status-UI fort. Wird von crond je
 # Zeitplan-Takt gestartet.
+#
+# Aufruf: webcron-abruf <url> [Name:Wert ...]
+# Jedes weitere Argument wird als HTTP-Kopfzeile mitgesendet.
 set -u
 
-URL="${1:?Aufruf: webcron-abruf <url>}"
+URL="${1:?Aufruf: webcron-abruf <url> [Name:Wert ...]}"
+shift
+
+# Die restlichen Argumente in curl-Form bringen: aus 'Name:Wert' wird
+# '-H Name:Wert'. Danach steht die fertige Argumentliste wieder in "$@".
+restliche=$#
+while [ "$restliche" -gt 0 ]; do
+    kopf="$1"; shift
+    set -- "$@" -H "$kopf"
+    restliche=$((restliche - 1))
+done
 TIMEOUT="${WEBCRON_TIMEOUT:-60}"
 VERSUCHE="${WEBCRON_VERSUCHE:-2}"
 AGENT="${WEBCRON_USER_AGENT:-webcron (+https://github.com/Celestial0579/webcron)}"
@@ -21,7 +34,7 @@ start=$(date +%s)
 code=$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
     --location --max-time "$TIMEOUT" \
     --retry "$VERSUCHE" --retry-connrefused \
-    --user-agent "$AGENT" "$URL" 2>>"$ERR") || code=000
+    --user-agent "$AGENT" "$@" "$URL" 2>>"$ERR") || code=000
 dauer=$(( $(date +%s) - start ))
 zeit=$(date '+%Y-%m-%d %H:%M:%S')
 

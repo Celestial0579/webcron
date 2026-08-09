@@ -1,2 +1,5 @@
 # Jede Minute — der Integrationstest wartet auf genau diesen Takt.
+# Der zweite Job prueft den Kopfzeilen-Weg durch die echte Crontab
+# (nicht nur durch --einmal): /kopf antwortet nur mit Header 200.
 * * * * *  http://ziel/takt
+* * * * *  http://ziel/kopf  X-Cron-Secret:geheim
