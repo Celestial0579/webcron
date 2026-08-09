@@ -97,19 +97,37 @@ uebersetze() {
         esac
 
         shift 6
-        aufruf="webcron-abruf '$(krontauglich "$url")'"
         koepfe=""
         for kopf in "$@"; do
             ist_kopfzeile "$kopf" || fehler "$JOBS Zeile $nr: '$kopf' ist keine Kopfzeile (Form Name:Wert, ohne Leerzeichen und Hochkomma)"
-            aufruf="$aufruf '$(krontauglich "$kopf")'"
             koepfe="$koepfe$kopf "
         done
 
-        printf '%s %s %s %s %s %s\n' "$min" "$std" "$tag" "$monat" "$wt" "$aufruf" >> "$ziel"
+        # Die Kopfzeilen stehen absichtlich NICHT mit in der Crontab:
+        # crond druckt die Job-Kommandozeile in die Logs, und ueber
+        # /proc/<pid>/cmdline waere sie auch in `ps` sichtbar — beides
+        # kein Platz fuer Secrets. webcron-abruf holt sie sich aus
+        # $LAUFDIR/koepfe/<urlhash> (siehe Startmodus unten).
+        printf '%s %s %s %s %s webcron-abruf '\''%s'\''\n' \
+            "$min" "$std" "$tag" "$monat" "$wt" "$(krontauglich "$url")" >> "$ziel"
         printf '%s %s %s %s %s\t%s\t%s\n' "$min" "$std" "$tag" "$monat" "$wt" "$url" "$koepfe" >> "$jobliste"
         anzahl=$((anzahl + 1))
     done < "$JOBS"
     [ "$anzahl" -gt 0 ] || fehler "$JOBS enthaelt keinen einzigen Job"
+}
+
+# Schreibt die Jobliste als Uebersicht — mit maskierten Kopfzeilen-Werten.
+# Die Uebersicht landet in Ausgaben und damit in Container-Logs; Header-
+# Werte sind Secrets und gehoeren dort nie hinein (die Crontab selbst
+# braucht sie, aber die ist eine Datei, kein Log).
+liste_jobs() {
+    while IFS="$(printf '\t')" read -r plan url koepfe; do
+        namen=""
+        for kopf in $koepfe; do
+            namen="$namen ${kopf%%:*}:***"
+        done
+        printf '  %s %s%s\n' "$plan" "$url" "$namen"
+    done < "$1"
 }
 
 CRONTAB_NEU=$(mktemp)
@@ -120,7 +138,7 @@ anzahl=$(wc -l < "$JOBLISTE_NEU" | tr -d ' ')
 case "$MODUS" in
     --pruefen)
         echo "webcron: Konfiguration in Ordnung — $anzahl Job(s):"
-        sed 's/^/  /' "$CRONTAB_NEU"
+        liste_jobs "$JOBLISTE_NEU"
         rm -f "$CRONTAB_NEU" "$JOBLISTE_NEU"
         ;;
     --einmal)
@@ -139,9 +157,22 @@ case "$MODUS" in
         mkdir -p "$(dirname "$CRONTAB")" "$LAUFDIR/status"
         cp "$CRONTAB_NEU" "$CRONTAB"
         cp "$JOBLISTE_NEU" "$LAUFDIR/jobs.tsv"
+
+        # Kopfzeilen je URL in Dateien ablegen (statt auf der crond-
+        # Kommandozeile, siehe uebersetze) — nur fuer root lesbar.
+        rm -rf "$LAUFDIR/koepfe"
+        mkdir -p "$LAUFDIR/koepfe"
+        chmod 700 "$LAUFDIR/koepfe"
+        while IFS="$(printf '\t')" read -r _ url koepfe; do
+            [ -n "$koepfe" ] || continue
+            kennung=$(printf '%s' "$url" | md5sum | cut -d' ' -f1)
+            # shellcheck disable=SC2086
+            printf '%s\n' $koepfe > "$LAUFDIR/koepfe/$kennung"
+        done < "$LAUFDIR/jobs.tsv"
+
         rm -f "$CRONTAB_NEU" "$JOBLISTE_NEU"
         echo "webcron: $anzahl Job(s) geladen aus $JOBS:"
-        sed 's/^/  /' "$CRONTAB"
+        liste_jobs "$LAUFDIR/jobs.tsv"
 
         # Status-UI: schreibgeschuetzte Uebersicht, standardmaessig nicht
         # nach aussen veroeffentlicht. WEBCRON_UI_PORT=0 schaltet sie ab.

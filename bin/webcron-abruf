@@ -4,13 +4,26 @@
 # Zeitplan-Takt gestartet.
 #
 # Aufruf: webcron-abruf <url> [Name:Wert ...]
-# Jedes weitere Argument wird als HTTP-Kopfzeile mitgesendet.
+# Kopfzeilen kommen als Argumente (Einmal-Modus) — oder, wenn keine
+# uebergeben wurden, aus $LAUFDIR/koepfe/<urlhash>. Auf der crond-
+# Kommandozeile stehen sie absichtlich nicht: crond loggt sie, und ueber
+# /proc waeren sie in `ps` sichtbar — kein Platz fuer Secrets.
 set -u
 
 URL="${1:?Aufruf: webcron-abruf <url> [Name:Wert ...]}"
 shift
 
-# Die restlichen Argumente in curl-Form bringen: aus 'Name:Wert' wird
+LAUFDIR="${WEBCRON_LAUFDIR:-/run/webcron}"
+STATUSDIR="$LAUFDIR/status"
+kennung=$(printf '%s' "$URL" | md5sum | cut -d' ' -f1)
+
+if [ $# -eq 0 ] && [ -f "$LAUFDIR/koepfe/$kennung" ]; then
+    while IFS= read -r kopf; do
+        [ -n "$kopf" ] && set -- "$@" "$kopf"
+    done < "$LAUFDIR/koepfe/$kennung"
+fi
+
+# Die Kopfzeilen in curl-Form bringen: aus 'Name:Wert' wird
 # '-H Name:Wert'. Danach steht die fertige Argumentliste wieder in "$@".
 restliche=$#
 while [ "$restliche" -gt 0 ]; do
@@ -21,7 +34,6 @@ done
 TIMEOUT="${WEBCRON_TIMEOUT:-60}"
 VERSUCHE="${WEBCRON_VERSUCHE:-2}"
 AGENT="${WEBCRON_USER_AGENT:-webcron (+https://github.com/Celestial0579/webcron)}"
-STATUSDIR="${WEBCRON_LAUFDIR:-/run/webcron}/status"
 
 # crond reicht die Ausgabe seiner Jobs nirgendwohin weiter — geloggt wird
 # deshalb direkt auf stdout/stderr von PID 1, denn dort lesen die

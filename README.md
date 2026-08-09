@@ -84,8 +84,10 @@ Query-String tauchen sie nicht in Access- und Proxy-Logs auf. Grenzen
 der Syntax: Weder URL noch Kopfzeilen dürfen Leerzeichen oder
 Hochkommas enthalten — `Authorization: Bearer <token>` (mit Leerzeichen
 im Wert) geht deshalb nicht; Endpunkte mit eigenem Header wie
-`X-Cron-Secret` sind der vorgesehene Weg. In der Status-UI erscheinen
-nur die Namen mitgesendeter Kopfzeilen, nie ihre Werte.
+`X-Cron-Secret` sind der vorgesehene Weg. Header-Werte behandelt webcron
+durchgehend als Secrets: Status-UI, Startprotokoll und `--pruefen`
+nennen nur die Namen, nie die Werte — und auf der crond-Kommandozeile
+(sichtbar in Logs und `ps`) stehen sie gar nicht erst.
 
 Nach einer Änderung an `jobs.cron` den Container neu starten
 (`docker restart webcron`); die Datei wird beim Start gelesen.
