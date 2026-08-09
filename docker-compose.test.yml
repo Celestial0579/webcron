@@ -1,0 +1,14 @@
+# Testaufbau fuer tests/integrationstest.sh — nichts hiervon ist fuer den
+# Betrieb gedacht. "ziel" ist ein Wegwerf-Webserver: /takt und /einmal
+# antworten mit 200, alles andere mit 404.
+services:
+  webcron:
+    build: .
+    volumes:
+      - ./tests/takt.cron:/config/jobs.cron:ro
+      - ./tests:/tests:ro
+    depends_on:
+      - ziel
+  ziel:
+    image: python:3.12-alpine
+    command: sh -c "mkdir -p /srv/www && echo ok > /srv/www/takt && echo ok > /srv/www/einmal && cd /srv/www && python -m http.server 80"

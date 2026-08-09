@@ -1,0 +1,3 @@
+# Die echte Job-Datei ist Betriebskonfiguration, kein Repo-Inhalt —
+# sie enthaelt womoeglich Tokens in URLs.
+jobs.cron

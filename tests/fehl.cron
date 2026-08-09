@@ -1,0 +1,3 @@
+# Fuer den Fehlerfall-Test: dieser Pfad existiert auf dem Zielserver
+# nicht, der Aufruf muss als HTTP 404 -> FEHLER gewertet werden.
+0 0 1 1 *  http://ziel/gibtsnicht

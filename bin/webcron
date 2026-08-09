@@ -1,0 +1,127 @@
+#!/bin/sh
+# webcron — ruft Cronjob-URLs nach Zeitplan auf.
+#
+# Fuer Webanwendungen, deren Hoster keine Cronjobs anbietet: Statt des
+# fehlenden System-Crons ruft dieser Container die Cron-URL der Anwendung
+# (wp-cron.php, cron.php, …) nach Zeitplan per HTTP auf.
+#
+# Aufrufarten:
+#   webcron             Konfiguration pruefen, dann crond starten (Normalfall)
+#   webcron --pruefen   nur die Konfiguration pruefen
+#   webcron --einmal    jede URL sofort genau einmal aufrufen; Exit != 0,
+#                       sobald ein Aufruf scheitert (fuer Probelaeufe/Tests)
+#
+# Konfiguration: /config/jobs.cron (WEBCRON_JOBS), eine Zeile je Aufruf:
+#   <Minute> <Stunde> <Monatstag> <Monat> <Wochentag> <URL>
+set -eu
+# Kein Globbing: Cron-Felder wie '*' werden unten per `set --` in Woerter
+# zerlegt und wuerden sonst zu Dateinamen expandieren.
+set -f
+
+JOBS="${WEBCRON_JOBS:-/config/jobs.cron}"
+CRONTAB="${WEBCRON_CRONTAB:-/etc/crontabs/root}"
+LAUFDIR="${WEBCRON_LAUFDIR:-/run/webcron}"
+UI_PORT="${WEBCRON_UI_PORT:-8080}"
+MODUS="${1:-}"
+
+fehler() { echo "webcron: $*" >&2; exit 1; }
+
+case "$MODUS" in
+    ""|--pruefen|--einmal) ;;
+    *) fehler "unbekannter Aufruf '$MODUS' — erlaubt sind --pruefen und --einmal" ;;
+esac
+
+[ -f "$JOBS" ] || fehler "Konfiguration fehlt: $JOBS
+Eine Datei mit Zeilen '<5 Cron-Felder> <URL>' dorthin mounten,
+Vorlage: jobs.example.cron im Repo."
+
+# Ein Cron-Feld: Ziffern, '*', ',', '-', '/' — mehr versteht busybox-crond
+# nicht. Geprueft wird der Zeichenvorrat, nicht der Wertebereich; eine
+# Minute '75' faellt erst crond auf.
+ist_cronfeld() {
+    case "$1" in
+        "" | *[!0-9*,/-]*) return 1 ;;
+    esac
+}
+
+# Liest $JOBS, prueft jede Zeile und schreibt eine Crontab nach $1 sowie
+# die Jobliste (Zeitplan<TAB>URL) nach $2. Bricht bei der ersten kaputten
+# Zeile ab — ein halber Zeitplan waere schlimmer als keiner.
+uebersetze() {
+    ziel="$1"
+    jobliste="$2"
+    : > "$ziel"
+    : > "$jobliste"
+    anzahl=0
+    nr=0
+    while IFS= read -r zeile || [ -n "$zeile" ]; do
+        nr=$((nr + 1))
+        rest=$(printf '%s' "$zeile" | sed 's/^[[:space:]]*//')
+        case "$rest" in ""|"#"*) continue ;; esac
+
+        # shellcheck disable=SC2086
+        set -- $rest
+        [ $# -eq 6 ] || fehler "$JOBS Zeile $nr: erwartet '<5 Cron-Felder> <URL>', gefunden: $zeile"
+        for feld in "$1" "$2" "$3" "$4" "$5"; do
+            ist_cronfeld "$feld" || fehler "$JOBS Zeile $nr: '$feld' ist kein Cron-Feld (erlaubt: Ziffern * , - /)"
+        done
+        url="$6"
+        case "$url" in
+            http://*|https://*) ;;
+            *) fehler "$JOBS Zeile $nr: URL muss mit http:// oder https:// beginnen: $url" ;;
+        esac
+        case "$url" in
+            *"'"*) fehler "$JOBS Zeile $nr: Hochkomma in der URL wird nicht unterstuetzt" ;;
+        esac
+
+        # '%' bedeutet in einer Crontab Zeilenumbruch und muss geschuetzt werden.
+        krontauglich=$(printf '%s' "$url" | sed 's/%/\\%/g')
+        printf '%s %s %s %s %s webcron-abruf '\''%s'\''\n' \
+            "$1" "$2" "$3" "$4" "$5" "$krontauglich" >> "$ziel"
+        printf '%s %s %s %s %s\t%s\n' "$1" "$2" "$3" "$4" "$5" "$url" >> "$jobliste"
+        anzahl=$((anzahl + 1))
+    done < "$JOBS"
+    [ "$anzahl" -gt 0 ] || fehler "$JOBS enthaelt keinen einzigen Job"
+}
+
+CRONTAB_NEU=$(mktemp)
+JOBLISTE_NEU=$(mktemp)
+uebersetze "$CRONTAB_NEU" "$JOBLISTE_NEU"
+anzahl=$(wc -l < "$JOBLISTE_NEU" | tr -d ' ')
+
+case "$MODUS" in
+    --pruefen)
+        echo "webcron: Konfiguration in Ordnung — $anzahl Job(s):"
+        sed 's/^/  /' "$CRONTAB_NEU"
+        rm -f "$CRONTAB_NEU" "$JOBLISTE_NEU"
+        ;;
+    --einmal)
+        echo "webcron: rufe jede der $anzahl URL(s) einmal auf"
+        fehlschlaege=0
+        while IFS="$(printf '\t')" read -r _ url; do
+            webcron-abruf "$url" || fehlschlaege=$((fehlschlaege + 1))
+        done < "$JOBLISTE_NEU"
+        rm -f "$CRONTAB_NEU" "$JOBLISTE_NEU"
+        [ "$fehlschlaege" -eq 0 ] || fehler "$fehlschlaege von $anzahl Aufruf(en) fehlgeschlagen"
+        ;;
+    "")
+        mkdir -p "$(dirname "$CRONTAB")" "$LAUFDIR/status"
+        cp "$CRONTAB_NEU" "$CRONTAB"
+        cp "$JOBLISTE_NEU" "$LAUFDIR/jobs.tsv"
+        rm -f "$CRONTAB_NEU" "$JOBLISTE_NEU"
+        echo "webcron: $anzahl Job(s) geladen aus $JOBS:"
+        sed 's/^/  /' "$CRONTAB"
+
+        # Status-UI: schreibgeschuetzte Uebersicht, standardmaessig nicht
+        # nach aussen veroeffentlicht. WEBCRON_UI_PORT=0 schaltet sie ab.
+        if [ "$UI_PORT" != "0" ]; then
+            httpd -p "$UI_PORT" -h /www
+            echo "webcron: Status-UI auf Port $UI_PORT (nur containerintern, sofern nicht veroeffentlicht)"
+        else
+            echo "webcron: Status-UI abgeschaltet (WEBCRON_UI_PORT=0)"
+        fi
+
+        echo "webcron: starte crond (Zeitzone: ${TZ:-UTC})"
+        exec crond -f -d "${WEBCRON_LOGLEVEL:-8}"
+        ;;
+esac

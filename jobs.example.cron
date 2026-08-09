@@ -1,0 +1,16 @@
+# webcron-Konfiguration: eine Zeile je Aufruf.
+#
+#   <Minute> <Stunde> <Monatstag> <Monat> <Wochentag> <URL>
+#
+# Cron-Syntax wie gewohnt (*, Listen 1,15, Bereiche 1-5, Schritte */5).
+# Die URL darf keine Leerzeichen und keine Hochkommas enthalten.
+# Die Zeiten gelten in der Zeitzone des Containers (Umgebungsvariable TZ).
+
+# WordPress: wp-cron alle 5 Minuten
+*/5 * * * *  https://example.com/wp-cron.php?doing_wp_cron
+
+# Nextcloud: Hintergrundjobs alle 5 Minuten
+#*/5 * * * *  https://cloud.example.com/cron.php
+
+# Shop-Export jede Nacht um 03:30
+#30 3 * * *  https://shop.example.com/export/nightly?token=GEHEIM
