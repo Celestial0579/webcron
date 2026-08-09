@@ -3,6 +3,8 @@
 Ruft Cronjob-URLs nach Zeitplan auf — für Webanwendungen, deren Hoster
 keine Cronjobs anbietet.
 
+**Schnellstart in 5 Minuten: [ANLEITUNG.md](ANLEITUNG.md)**
+
 ## Wozu das gut ist
 
 Viele Webanwendungen brauchen einen regelmäßigen Anstoß von außen:
