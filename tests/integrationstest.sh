@@ -60,6 +60,20 @@ log_enthaelt() {  # log_enthaelt <dienst> <muster>
     "${COMPOSE[@]}" logs "$1" 2>/dev/null | grep -q "$2"
 }
 
+# Wartet, bis ein Muster im Log eines Dienstes auftaucht. Ein starres
+# `sleep` reicht nicht: Auf langsamen CI-Runnern hinkt der Docker-Logstrom
+# dem Ereignis um Sekunden hinterher — genau daran ist ein Lauf schon
+# gescheitert, obwohl der Aufruf selbst laengst durch war.
+warte_auf_log() {  # warte_auf_log <dienst> <muster> <sekunden>
+    local rest="$3"
+    while (( rest > 0 )); do
+        log_enthaelt "$1" "$2" && return 0
+        sleep 1
+        rest=$((rest - 1))
+    done
+    log_enthaelt "$1" "$2"
+}
+
 status_ui() {
     "${COMPOSE[@]}" exec -T webcron curl -sf http://127.0.0.1:8080/cgi-bin/status
 }
@@ -91,18 +105,12 @@ pruefe_scheitert "Gegenprobe: ohne Kopfzeile lehnt das Ziel mit 403 ab" \
 
 echo
 echo "--- crond-Betrieb (warte auf den ersten Takt, bis zu 90 s) ---"
-getroffen=""
-for _ in $(seq 1 90); do
-    if log_enthaelt ziel 'GET /takt'; then getroffen=ja; break; fi
-    sleep 1
-done
-# Beide Jobs feuern in derselben Minute; dem zweiten einen Moment geben.
-sleep 3
-pruefe "crond ruft die URL nach Zeitplan auf" test -n "$getroffen"
+pruefe "crond ruft die URL nach Zeitplan auf" \
+    warte_auf_log ziel 'GET /takt' 90
 pruefe "der Aufruf steht als OK in den Container-Logs" \
-    log_enthaelt webcron 'OK  *HTTP 200 .* http://ziel/takt'
+    warte_auf_log webcron 'OK  *HTTP 200 .* http://ziel/takt' 30
 pruefe "auch der Kopfzeilen-Job kommt durch die Crontab (HTTP 200 auf /kopf)" \
-    log_enthaelt webcron 'OK  *HTTP 200 .* http://ziel/kopf'
+    warte_auf_log webcron 'OK  *HTTP 200 .* http://ziel/kopf' 30
 
 echo
 echo "--- Status-UI ---"
