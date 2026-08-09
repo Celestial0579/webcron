@@ -92,6 +92,16 @@ pruefe_scheitert "fehlende Konfiguration fuehrt zum Abbruch" \
 pruefe_scheitert "kaputte Kopfzeile wird abgelehnt" \
     "${COMPOSE[@]}" run --rm --no-deps -e WEBCRON_JOBS=/tests/kaputt-kopf.cron webcron --pruefen
 
+# Header-Werte sind Secrets. Sie duerfen in keiner Ausgabe auftauchen —
+# genau das ist schon passiert: Die Startausgabe druckte die rohe Crontab
+# samt X-Cron-Secret-Wert in die Container-Logs.
+"${COMPOSE[@]}" run --rm --no-deps -e WEBCRON_JOBS=/tests/kopf.cron webcron --pruefen \
+    > /tmp/pruefen-ausgabe.txt 2>&1 || true
+pruefe "--pruefen nennt den Header-Namen (maskiert)" \
+    grep -q 'X-Cron-Secret:\*\*\*' /tmp/pruefen-ausgabe.txt
+pruefe_scheitert "--pruefen verraet den Header-Wert nicht" \
+    grep -q 'geheim' /tmp/pruefen-ausgabe.txt
+
 echo
 echo "--- Einmal-Modus ---"
 pruefe "erreichbare URL wird als OK gewertet" \
@@ -111,6 +121,8 @@ pruefe "der Aufruf steht als OK in den Container-Logs" \
     warte_auf_log webcron 'OK  *HTTP 200 .* http://ziel/takt' 30
 pruefe "auch der Kopfzeilen-Job kommt durch die Crontab (HTTP 200 auf /kopf)" \
     warte_auf_log webcron 'OK  *HTTP 200 .* http://ziel/kopf' 30
+pruefe_scheitert "das Startprotokoll verraet den Header-Wert nicht" \
+    log_enthaelt webcron 'geheim'
 
 echo
 echo "--- Status-UI ---"
