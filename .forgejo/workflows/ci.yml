@@ -11,18 +11,25 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: shellcheck bereitstellen
+        # Das Laeufer-Abbild bringt es nicht mit, anders als GitHubs ubuntu-latest.
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
       - run: shellcheck bin/webcron bin/webcron-abruf www/cgi-bin/status tests/integrationstest.sh
 
   integration:
     name: Integrationstest
-    runs-on: ubuntu-latest
+    # Braucht den Docker-Daemon; nur der Laeufer mit der Marke
+    # docker-socket haengt den Socket ein (Laeufer 1 und 2 nicht).
+    runs-on: docker-socket
     steps:
       - uses: actions/checkout@v4
       - run: tests/integrationstest.sh
 
   image:
     name: Abbild bauen und veroeffentlichen
-    runs-on: ubuntu-latest
+    # Braucht den Docker-Daemon; nur der Laeufer mit der Marke
+    # docker-socket haengt den Socket ein (Laeufer 1 und 2 nicht).
+    runs-on: docker-socket
     needs: [lint, integration]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     permissions:
