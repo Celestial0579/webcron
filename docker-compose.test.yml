@@ -2,16 +2,40 @@
 # Betrieb gedacht. "ziel" ist ein Wegwerf-Webserver (tests/ziel.py):
 # /takt und /einmal antworten 200, /kopf nur mit richtigem X-Cron-Secret,
 # alles andere 404.
+#
+# Die Testdaten kommen ueber das Volume "testdaten" herein, nicht per
+# Bind-Mount -- die Begruendung steht in tests/Dockerfile.
 services:
+  # Einmal-Dienst: fuellt das Volume und beendet sich. Die beiden anderen
+  # Dienste warten darauf, sonst laufen sie gegen ein leeres /tests.
+  testdaten:
+    build: ./tests
+    command: ["sh", "-c", "cp -a /vorlage/. /tests/"]
+    volumes:
+      - testdaten:/tests
+
   webcron:
     build: .
+    environment:
+      # Ersetzt die fruehere Einhaengung von takt.cron nach
+      # /config/jobs.cron. Der Dienst liest den Pfad aus WEBCRON_JOBS.
+      WEBCRON_JOBS: /tests/takt.cron
     volumes:
-      - ./tests/takt.cron:/config/jobs.cron:ro
-      - ./tests:/tests:ro
+      - testdaten:/tests:ro
     depends_on:
-      - ziel
+      testdaten:
+        condition: service_completed_successfully
+      ziel:
+        condition: service_started
+
   ziel:
     image: python:3.12-alpine
     command: python /tests/ziel.py
     volumes:
-      - ./tests:/tests:ro
+      - testdaten:/tests:ro
+    depends_on:
+      testdaten:
+        condition: service_completed_successfully
+
+volumes:
+  testdaten:
