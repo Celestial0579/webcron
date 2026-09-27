@@ -146,8 +146,8 @@ tests/integrationstest.sh
 baut das Abbild und prüft Konfigurationsprüfung, Einmal-Modus,
 einen echten crond-Takt und die Status-UI gegen einen
 Wegwerf-Webserver — es wird keine echte fremde URL aufgerufen.
-Dasselbe läuft als GitHub-CI; auf `main` veröffentlicht die CI das
-Abbild nach `ghcr.io`.
+Dasselbe läuft als GitHub-CI. Auf `main` veröffentlicht sie das Abbild als
+`ghcr.io/celestial0579/webcron`; Pull Requests bauen es nur.
 
 ## Lizenz
 
