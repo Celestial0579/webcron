@@ -1,3 +1,7 @@
 # Die echte Job-Datei ist Betriebskonfiguration, kein Repo-Inhalt —
 # sie enthaelt womoeglich Tokens in URLs.
 jobs.cron
+
+# Lokale Claude-Code-Dateien (Freigaben, ggf. mit Geheimnissen)
+.claude/settings.local.json
+CLAUDE.local.md
