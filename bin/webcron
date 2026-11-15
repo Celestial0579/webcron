@@ -78,13 +78,59 @@ fuer_andere_lesbar() {
     done
 }
 
-# Ein Cron-Feld: Ziffern, '*', ',', '-', '/' — mehr versteht busybox-crond
-# nicht. Geprueft wird der Zeichenvorrat, nicht der Wertebereich; eine
-# Minute '75' faellt erst crond auf.
+# Zahl ohne fuehrende Nullen ('07' -> 7; '08' waere in $(( )) ungueltig oktal).
+# Mehr als 5 Stellen sind nie ein Cron-Wert (und wuerden $(( )) ueberlaufen).
+ohne_nullen() {
+    n="$1"
+    case "$n" in "" | *[!0-9]* | ??????*) return 1 ;; esac
+    while :; do
+        case "$n" in 0?*) n="${n#0}" ;; *) break ;; esac
+    done
+}
+
+# Ein Cron-Feld mit Wertebereich: ist_cronfeld <Feld> <kleinster> <groesster>.
+# Erlaubt sind Listen (,) aus '*', Zahl, Bereich a-b, jeweils mit Schritt
+# (*/n, a-b/n); Schritt nur nach '*' oder einem Bereich -- '0/15' deutet
+# busybox anders als mancher erwartet (nur der Wert 0). Jede Zahl muss im
+# Bereich liegen: busybox-crond zaehlt sonst modulo Feldbreite weiter,
+# setzt jeden Eintrag des Feldes und meldet erst danach "parse error" --
+# '0 3 * * 7' liefe dann jeden Tag.
 ist_cronfeld() {
-    case "$1" in
-        "" | *[!0-9*,/-]*) return 1 ;;
+    feld="$1"; lo="$2"; hi="$3"
+    case "$feld" in
+        "" | *[!0-9*,/-]* | ,* | *, | *,,*) return 1 ;;
     esac
+    ifs_alt="$IFS"
+    IFS=,
+    # shellcheck disable=SC2086
+    set -- $feld
+    IFS="$ifs_alt"
+    for teil in "$@"; do
+        bereich="${teil%%/*}"
+        schritt=""
+        case "$teil" in
+            */*)
+                schritt="${teil#*/}"
+                ohne_nullen "$schritt" || return 1
+                schritt="$n"
+                [ "$schritt" -ge 1 ] && [ "$schritt" -le $((hi - lo + 1)) ] || return 1
+                ;;
+        esac
+        case "$bereich" in
+            "*") ;;
+            *-*)
+                von="${bereich%-*}"; bis="${bereich#*-}"
+                ohne_nullen "$von" || return 1; von="$n"
+                ohne_nullen "$bis" || return 1; bis="$n"
+                [ "$von" -ge "$lo" ] && [ "$von" -le "$bis" ] && [ "$bis" -le "$hi" ] || return 1
+                ;;
+            *)
+                [ -z "$schritt" ] || return 1
+                ohne_nullen "$bereich" || return 1
+                [ "$n" -ge "$lo" ] && [ "$n" -le "$hi" ] || return 1
+                ;;
+        esac
+    done
 }
 
 # Eine Kopfzeile: Name:Wert. Der Name wie in HTTP ueblich (Buchstaben,
@@ -124,6 +170,8 @@ uebersetze() {
     nr=0
     while IFS= read -r zeile || [ -n "$zeile" ]; do
         nr=$((nr + 1))
+        # UTF-8-BOM am Dateianfang (z. B. von PowerShell 5.1) entfernen.
+        [ "$nr" -ne 1 ] || zeile="${zeile#"$(printf '\357\273\277')"}"
         # Windows-Zeilenende (CRLF) tolerieren, sonstige Steuerzeichen ablehnen
         # (ein \r am Zeilenende haengt sonst unbemerkt an der URL/dem Header).
         zeile="${zeile%"$(printf '\r')"}"
@@ -142,7 +190,14 @@ uebersetze() {
         pos=0
         for feld in "$min" "$std" "$tag" "$monat" "$wt"; do
             pos=$((pos + 1))
-            ist_cronfeld "$feld" || fehler "$JOBS Zeile $nr: das ${pos}. Wort ist kein Cron-Feld (erlaubt: Ziffern * , - /); fehlt ein Feld?"
+            case "$pos" in
+                1) lo=0; hi=59; art="Minute" ;;
+                2) lo=0; hi=23; art="Stunde" ;;
+                3) lo=1; hi=31; art="Monatstag" ;;
+                4) lo=1; hi=12; art="Monat" ;;
+                *) lo=0; hi=6;  art="Wochentag, Sonntag ist 0" ;;
+            esac
+            ist_cronfeld "$feld" "$lo" "$hi" || fehler "$JOBS Zeile $nr: das ${pos}. Wort ist kein gueltiges Cron-Feld ($art, erlaubt $lo-$hi, dazu * , - /)"
         done
         case "$url" in
             http://*|https://*) ;;

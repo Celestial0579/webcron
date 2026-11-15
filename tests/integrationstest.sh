@@ -182,6 +182,9 @@ pruefe "ohne Zwischendatei: Abbruch mit Meldung, /dev/null bleibt Geraet" \
         PATH=/tmp/stub:$PATH WEBCRON_LAUFDIR=/tmp/l webcron-abruf --job 1 2>/tmp/fehler; rc=$?
         [ "$rc" = 2 ] && grep -q Zwischendatei /tmp/fehler && [ -c /dev/null ]'
 
+pruefe "Cron-Felder: Wertebereiche, Listen, Schritte, BOM (tests/cronfelder.sh)" \
+    "${COMPOSE[@]}" run --rm --no-deps --entrypoint sh webcron /tests/cronfelder.sh
+
 echo
 echo "--- Einmal-Modus ---"
 pruefe "erreichbare URL wird als OK gewertet" \
