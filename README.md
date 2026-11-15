@@ -101,6 +101,14 @@ ein halber Zeitplan wäre schlimmer als keiner.
 */5 * * * *  https://hengste.example.com/cron/run  X-Cron-Secret:GEHEIM
 ```
 
+Die Cron-Felder prüft webcron auf ihren Wertebereich: Minute 0–59,
+Stunde 0–23, Monatstag 1–31, Monat 1–12, Wochentag 0–6 (Sonntag ist 0,
+eine 7 gibt es nicht). Erlaubt sind Zahlen, `*`, Listen (`1,15`),
+Bereiche (`1-5`) und Schritte nach `*` oder einem Bereich (`*/5`,
+`8-18/2`), keine Namen wie `mon` und kein Schritt hinter einer einzelnen
+Zahl (`0/15`). Die Datei darf UTF-8 mit BOM sein und Windows-Zeilenenden
+haben.
+
 Kopfzeilen sind der richtige Platz für Secrets: Anders als der
 Query-String tauchen sie nicht in Access- und Proxy-Logs auf. Grenzen
 der Syntax: Weder URL noch Kopfzeilen dürfen Leerzeichen oder

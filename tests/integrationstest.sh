@@ -172,14 +172,17 @@ lehne_ab_ohne_wert "Meldung nennt bei 'Authorization:Bearer <token>' das Token n
 
 # Scheitert mktemp, bricht webcron-abruf ab, ohne irgendetwas zu loeschen
 # (frueher stand dort ein Ausweichpfad /dev/null, den die Trap entfernte).
+# mktemp scheitert hier an einem Verzeichnis ohne Schreibrecht (root hat im
+# Testaufbau kein CAP_DAC_OVERRIDE); eine Attrappe in /tmp ginge nicht, denn
+# Dockers tmpfs ist noexec.
 # Das Skript in Hochkommas soll erst im Container expandiert werden:
 # shellcheck disable=SC2016
 pruefe "ohne Zwischendatei: Abbruch mit Meldung, /dev/null bleibt Geraet" \
     "${COMPOSE[@]}" run --rm --no-deps --entrypoint sh webcron -c '
-        mkdir -p /tmp/l/jobs /tmp/stub
+        mkdir -p /tmp/l/jobs
         echo http://ziel/takt > /tmp/l/jobs/1
-        printf "#!/bin/sh\nexit 1\n" > /tmp/stub/mktemp; chmod +x /tmp/stub/mktemp
-        PATH=/tmp/stub:$PATH WEBCRON_LAUFDIR=/tmp/l webcron-abruf --job 1 2>/tmp/fehler; rc=$?
+        chmod 555 /tmp/l
+        WEBCRON_LAUFDIR=/tmp/l webcron-abruf --job 1 2>/tmp/fehler; rc=$?
         [ "$rc" = 2 ] && grep -q Zwischendatei /tmp/fehler && [ -c /dev/null ]'
 
 echo
