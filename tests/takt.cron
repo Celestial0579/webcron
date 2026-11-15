@@ -4,4 +4,6 @@
 * * * * *  http://ziel/takt
 # Query-String mit Secret: darf in keinem Log auftauchen.
 * * * * *  http://ziel/takt?token=geheim2
+# Prozentkodierung in der URL samt Kopfzeile (frueher ging dabei die Kopfzeile verloren).
+* * * * *  http://ziel/kopf?p=a%2Bb  X-Cron-Secret:geheim
 * * * * *  http://ziel/kopf  X-Cron-Secret:geheim

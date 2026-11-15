@@ -44,7 +44,7 @@ docker run -d --name webcron --restart unless-stopped \
 
 ## 4. Kontrollieren
 
-- Status-Übersicht im Browser: `http://<host>:8080/`
+- Status-Übersicht im Browser: `http://127.0.0.1:8080/` (auf dem Docker-Host; von anderen Rechnern per SSH-Tunnel `ssh -L 8080:127.0.0.1:8080 <host>`)
 - Logs: `docker logs webcron` — jede Zeile mit Zeit, HTTP-Code, Dauer
 
 ## 5. Jobs ändern

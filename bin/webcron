@@ -98,6 +98,12 @@ uebersetze() {
     nr=0
     while IFS= read -r zeile || [ -n "$zeile" ]; do
         nr=$((nr + 1))
+        # Windows-Zeilenende (CRLF) tolerieren, sonstige Steuerzeichen ablehnen
+        # (ein \r am Zeilenende haengt sonst unbemerkt an der URL/dem Header).
+        zeile="${zeile%"$(printf '\r')"}"
+        case "$(printf '%s' "$zeile" | tr -d '\t')" in
+            *[[:cntrl:]]*) fehler "$JOBS Zeile $nr: Steuerzeichen sind nicht erlaubt" ;;
+        esac
         rest=$(printf '%s' "$zeile" | sed 's/^[[:space:]]*//')
         case "$rest" in ""|"#"*) continue ;; esac
 
