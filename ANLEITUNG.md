@@ -34,7 +34,7 @@ docker run --rm -v "$PWD/jobs.cron:/config/jobs.cron:ro" \
 ```bash
 docker run -d --name webcron --restart unless-stopped \
   -e TZ=Europe/Berlin \
-  -p 8080:8080 \
+  -p 127.0.0.1:8080:8080 \
   -v "$PWD/jobs.cron:/config/jobs.cron:ro" \
   ghcr.io/celestial0579/webcron:latest
 ```

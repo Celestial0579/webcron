@@ -15,6 +15,20 @@ html_schutz() {
     printf '%s' "$1" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g'
 }
 
+# URL fuer Anzeige und Logs: Zugangsdaten (user:pw@) und Query-String
+# koennen Secrets tragen und werden maskiert.
+anzeige_url() {
+    u="$1"
+    case "$u" in *\?*) u="${u%%\?*}?***" ;; esac
+    schema="${u%%://*}"
+    rest="${u#*://}"
+    auth="${rest%%/*}"
+    case "$auth" in
+        *@*) pfad="${rest#"$auth"}"; u="$schema://***@${auth#*@}$pfad" ;;
+    esac
+    printf '%s' "$u"
+}
+
 printf 'Content-Type: text/html; charset=utf-8\r\n\r\n'
 cat <<'KOPF'
 <!DOCTYPE html>
@@ -46,7 +60,7 @@ echo "<p class=\"meta\">Zeitzone: $(html_schutz "${TZ:-UTC}") &middot; Stand: $(
 echo '<table><tr><th>Zeitplan</th><th>URL</th><th>Letzter Aufruf</th><th>Ergebnis</th><th>Dauer</th><th>OK</th><th>Fehler</th></tr>'
 
 while IFS="$TAB" read -r plan url koepfe; do
-    url_html=$(html_schutz "$url")
+    url_html=$(html_schutz "$(anzeige_url "$url")")
     plan_html=$(html_schutz "$plan")
     # Kopfzeilen: nur die Namen zeigen — die Werte sind Secrets.
     kopf_namen=""

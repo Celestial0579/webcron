@@ -10,6 +10,20 @@
 # /proc waeren sie in `ps` sichtbar — kein Platz fuer Secrets.
 set -u
 
+# URL fuer Anzeige und Logs: Zugangsdaten (user:pw@) und Query-String
+# koennen Secrets tragen und werden maskiert.
+anzeige_url() {
+    u="$1"
+    case "$u" in *\?*) u="${u%%\?*}?***" ;; esac
+    schema="${u%%://*}"
+    rest="${u#*://}"
+    auth="${rest%%/*}"
+    case "$auth" in
+        *@*) pfad="${rest#"$auth"}"; u="$schema://***@${auth#*@}$pfad" ;;
+    esac
+    printf '%s' "$u"
+}
+
 URL="${1:?Aufruf: webcron-abruf <url> [Name:Wert ...]}"
 shift
 
@@ -74,8 +88,8 @@ printf '%s\t%s\t%s\t%s\t%s\t%s\n' \
     > "$STATUSDIR/$kennung"
 
 if [ "$ergebnis" = OK ]; then
-    echo "$zeit  OK      HTTP $code  ${dauer}s  $URL" >> "$OUT"
+    echo "$zeit  OK      HTTP $code  ${dauer}s  $(anzeige_url "$URL")" >> "$OUT"
 else
-    echo "$zeit  FEHLER  HTTP $code  ${dauer}s  $URL" >> "$ERR"
+    echo "$zeit  FEHLER  HTTP $code  ${dauer}s  $(anzeige_url "$URL")" >> "$ERR"
     exit 1
 fi

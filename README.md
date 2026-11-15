@@ -37,7 +37,7 @@ einer einzigen Textdatei, Logs und Status-Übersicht, sonst nichts.
 
 ```
 # <Minute> <Stunde> <Monatstag> <Monat> <Wochentag> <URL>
-*/5 * * * *  https://example.com/wp-cron.php?doing_wp_cron
+*/5 * * * *  https://example.com/wp-cron.php?***
 30 3 * * *   https://example.com/export/nightly?token=GEHEIM
 ```
 
@@ -46,7 +46,7 @@ Dann starten:
 ```bash
 docker run -d --name webcron --restart unless-stopped \
   -e TZ=Europe/Berlin \
-  -p 8080:8080 \
+  -p 127.0.0.1:8080:8080 \
   -v "$PWD/jobs.cron:/config/jobs.cron:ro" \
   ghcr.io/celestial0579/webcron:latest
 ```
@@ -108,8 +108,8 @@ Jeder Aufruf landet mit Zeit, HTTP-Code und Dauer in den Container-Logs:
 
 ```
 $ docker logs webcron
-2026-08-09 14:35:00  OK      HTTP 200  1s  https://example.com/wp-cron.php?doing_wp_cron
-2026-08-09 14:40:02  FEHLER  HTTP 503  2s  https://example.com/wp-cron.php?doing_wp_cron
+2026-08-09 14:35:00  OK      HTTP 200  1s  https://example.com/wp-cron.php?***
+2026-08-09 14:40:02  FEHLER  HTTP 503  2s  https://example.com/wp-cron.php?***
 ```
 
 Als `OK` zählt jede 2xx- und 3xx-Antwort, alles andere als `FEHLER`
@@ -128,7 +128,9 @@ nicht der Container.
 
 ## Sicherheit
 
-- Tokens oder Geheimnisse in URLs erscheinen in Logs und Status-UI.
+- Query-String und Zugangsdaten (`user:pw@`) in URLs werden in Logs und
+  Status-UI maskiert (`?***`); trotzdem Geheimnisse bevorzugt als
+  Kopfzeile übergeben.
   Wo möglich, der Anwendung ein eigenes Cron-Token geben, das nichts
   anderes kann.
 - Der einzige Port ist die Status-UI (ohne Anmeldung) — im LAN in

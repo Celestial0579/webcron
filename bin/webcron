@@ -27,6 +27,20 @@ LAUFDIR="${WEBCRON_LAUFDIR:-/run/webcron}"
 UI_PORT="${WEBCRON_UI_PORT:-8080}"
 MODUS="${1:-}"
 
+# URL fuer Anzeige und Logs: Zugangsdaten (user:pw@) und Query-String
+# koennen Secrets tragen und werden maskiert.
+anzeige_url() {
+    u="$1"
+    case "$u" in *\?*) u="${u%%\?*}?***" ;; esac
+    schema="${u%%://*}"
+    rest="${u#*://}"
+    auth="${rest%%/*}"
+    case "$auth" in
+        *@*) pfad="${rest#"$auth"}"; u="$schema://***@${auth#*@}$pfad" ;;
+    esac
+    printf '%s' "$u"
+}
+
 fehler() { echo "webcron: $*" >&2; exit 1; }
 
 case "$MODUS" in
@@ -126,7 +140,7 @@ liste_jobs() {
         for kopf in $koepfe; do
             namen="$namen ${kopf%%:*}:***"
         done
-        printf '  %s %s%s\n' "$plan" "$url" "$namen"
+        printf '  %s %s%s\n' "$plan" "$(anzeige_url "$url")" "$namen"
     done < "$1"
 }
 

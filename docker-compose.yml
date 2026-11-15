@@ -12,8 +12,9 @@ services:
       # WEBCRON_UI_PORT: 0       # Status-UI abschalten
     volumes:
       - ./jobs.cron:/config/jobs.cron:ro
-    # Status-UI: gedacht fuer den Blick aus dem eigenen Netz. Sie hat
+    # Status-UI: standardmaessig nur auf dem Host selbst (127.0.0.1) erreichbar;
+    # fuer den Blick aus dem eigenen Netz die Adresse bewusst aendern. Sie hat
     # keine Anmeldung — der Port gehoert deshalb hinter die Firewall des
     # Hosts, nicht ins Internet weitergereicht.
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
