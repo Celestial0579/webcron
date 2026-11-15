@@ -197,6 +197,8 @@ case "$MODUS" in
         installiere_jobs
         cp "$CRONTAB_NEU" "$CRONTAB"
         cp "$JOBLISTE_NEU" "$LAUFDIR/jobs.tsv"
+        # mktemp legt 0600 an; die Status-UI (nobody) muss die maskierte Liste lesen.
+        chmod 644 "$LAUFDIR/jobs.tsv"
 
         echo "webcron: $anzahl Job(s) geladen aus $JOBS:"
         liste_jobs "$LAUFDIR/jobs.tsv"
