@@ -8,6 +8,7 @@ RUN apk add --no-cache curl tzdata tini busybox-extras
 
 COPY bin/webcron bin/webcron-abruf /usr/local/bin/
 COPY www /www
+RUN chmod -R a+rX /www && chmod 755 /www/cgi-bin/status
 
 # crond braucht root, um /etc/crontabs/root zu lesen und Jobs zu starten;
 # der Container bleibt deshalb bei root. Er veroeffentlicht von sich aus

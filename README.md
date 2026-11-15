@@ -48,6 +48,9 @@ docker run -d --name webcron --restart unless-stopped \
   -e TZ=Europe/Berlin \
   -p 127.0.0.1:8080:8080 \
   -v "$PWD/jobs.cron:/config/jobs.cron:ro" \
+  --read-only --tmpfs /run --tmpfs /tmp --tmpfs /etc/crontabs:mode=0755 \
+  --cap-drop ALL --cap-add SETUID --cap-add SETGID \
+  --security-opt no-new-privileges:true \
   ghcr.io/celestial0579/webcron:latest
 ```
 
@@ -148,8 +151,13 @@ nicht der Container.
 - Der einzige Port ist die Status-UI (ohne Anmeldung) — im LAN in
   Ordnung, aber nicht ins Internet weiterreichen. Ohne UI
   (`WEBCRON_UI_PORT=0`) braucht der Container gar keinen Port.
-- Sonst keine besonderen Rechte und kein beschreibbares Dateisystem
-  außer `/run`, `/tmp` und `/etc/crontabs`.
+- Die Status-UI läuft als `nobody` und sieht nur die maskierte Jobliste
+  und den Status, nie die Jobdateien mit URL-Secrets und Kopfzeilen.
+- Keine besonderen Rechte und kein beschreibbares Dateisystem außer
+  `/run`, `/tmp` und `/etc/crontabs`: Die Beispiele (Compose, `docker run`)
+  erzwingen das mit `read_only`, `tmpfs`, `cap_drop: ALL` (nur SETUID und
+  SETGID bleiben, crond wechselt je Job die Identität) und
+  `no-new-privileges`.
 
 ## Tests
 

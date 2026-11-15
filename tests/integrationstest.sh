@@ -78,6 +78,10 @@ warte_auf_log() {  # warte_auf_log <dienst> <muster> <sekunden>
     log_enthaelt "$1" "$2"
 }
 
+ui_prozess_nobody() {
+    "${COMPOSE[@]}" exec -T webcron ps -o user,args | grep '[h]ttpd' | grep -q '^nobody'
+}
+
 status_ui() {
     "${COMPOSE[@]}" exec -T webcron curl -sf http://127.0.0.1:8080/cgi-bin/status
 }
@@ -152,6 +156,12 @@ pruefe_scheitert "der Query-String steht in keinem Log von webcron (crond-Joblog
 echo
 echo "--- Status-UI ---"
 status_ui > "$ARBEIT/statusseite.html" || : > "$ARBEIT/statusseite.html"
+pruefe "Status-UI (httpd) laeuft als nobody" \
+    ui_prozess_nobody
+pruefe_scheitert "nobody kann die Jobdateien (Secrets) nicht lesen" \
+    "${COMPOSE[@]}" exec -T --user nobody webcron cat /run/webcron/jobs/2
+pruefe_scheitert "Dateisystem ist schreibgeschuetzt" \
+    "${COMPOSE[@]}" exec -T webcron touch /usr/schreibtest
 pruefe "Statusseite antwortet" test -s "$ARBEIT/statusseite.html"
 pruefe "Statusseite zeigt den Job" grep -q "http://ziel/takt" "$ARBEIT/statusseite.html"
 pruefe "Statusseite zeigt das Ergebnis OK" grep -q "OK (HTTP 200)" "$ARBEIT/statusseite.html"

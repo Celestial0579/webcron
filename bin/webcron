@@ -204,7 +204,9 @@ case "$MODUS" in
         # Status-UI: schreibgeschuetzte Uebersicht, standardmaessig nicht
         # nach aussen veroeffentlicht. WEBCRON_UI_PORT=0 schaltet sie ab.
         if [ "$UI_PORT" != "0" ]; then
-            httpd -p "$UI_PORT" -h /www
+            # Als "nobody": Der netzseitige Prozess braucht nur jobs.tsv
+            # (maskiert) und status/, nie die Jobdateien mit den Secrets.
+            httpd -u nobody -p "$UI_PORT" -h /www
             echo "webcron: Status-UI auf Port $UI_PORT (nur containerintern, sofern nicht veroeffentlicht)"
         else
             echo "webcron: Status-UI abgeschaltet (WEBCRON_UI_PORT=0)"
