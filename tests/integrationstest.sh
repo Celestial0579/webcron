@@ -41,19 +41,19 @@ trap aufraeumen EXIT
 fehler=0
 pruefe() {  # pruefe "<Beschreibung>" <Befehl...>
     local beschreibung="$1"; shift
-    if "$@" >$ARBEIT/pruefung.log 2>&1; then
+    if "$@" >"$ARBEIT/pruefung.log" 2>&1; then
         echo "  OK    $beschreibung"
     else
         echo "  FEHL  $beschreibung"
-        sed 's/^/          /' $ARBEIT/pruefung.log | head -20
+        sed 's/^/          /' "$ARBEIT/pruefung.log" | head -20
         fehler=$((fehler + 1))
     fi
 }
 pruefe_scheitert() {  # wie pruefe, aber der Befehl MUSS fehlschlagen
     local beschreibung="$1"; shift
-    if "$@" >$ARBEIT/pruefung.log 2>&1; then
+    if "$@" >"$ARBEIT/pruefung.log" 2>&1; then
         echo "  FEHL  $beschreibung (Befehl war unerwartet erfolgreich)"
-        sed 's/^/          /' $ARBEIT/pruefung.log | head -20
+        sed 's/^/          /' "$ARBEIT/pruefung.log" | head -20
         fehler=$((fehler + 1))
     else
         echo "  OK    $beschreibung"
@@ -100,11 +100,11 @@ pruefe_scheitert "kaputte Kopfzeile wird abgelehnt" \
 # genau das ist schon passiert: Die Startausgabe druckte die rohe Crontab
 # samt X-Cron-Secret-Wert in die Container-Logs.
 "${COMPOSE[@]}" run --rm --no-deps -e WEBCRON_JOBS=/tests/kopf.cron webcron --pruefen \
-    > $ARBEIT/pruefen-ausgabe.txt 2>&1 || true
+    > "$ARBEIT/pruefen-ausgabe.txt" 2>&1 || true
 pruefe "--pruefen nennt den Header-Namen (maskiert)" \
-    grep -q 'X-Cron-Secret:\*\*\*' $ARBEIT/pruefen-ausgabe.txt
+    grep -q 'X-Cron-Secret:\*\*\*' "$ARBEIT/pruefen-ausgabe.txt"
 pruefe_scheitert "--pruefen verraet den Header-Wert nicht" \
-    grep -q 'geheim' $ARBEIT/pruefen-ausgabe.txt
+    grep -q 'geheim' "$ARBEIT/pruefen-ausgabe.txt"
 
 # Konfigurationsdatei mit Windows-Zeilenenden (CRLF) ist gueltig, eine mit
 # Steuerzeichen nicht -- beides wird im Container erzeugt, nicht im Repo
@@ -151,10 +151,10 @@ pruefe_scheitert "der Query-String steht in keinem Log von webcron (crond-Joblog
 
 echo
 echo "--- Status-UI ---"
-status_ui > $ARBEIT/statusseite.html || : > $ARBEIT/statusseite.html
-pruefe "Statusseite antwortet" test -s $ARBEIT/statusseite.html
-pruefe "Statusseite zeigt den Job" grep -q "http://ziel/takt" $ARBEIT/statusseite.html
-pruefe "Statusseite zeigt das Ergebnis OK" grep -q "OK (HTTP 200)" $ARBEIT/statusseite.html
+status_ui > "$ARBEIT/statusseite.html" || : > "$ARBEIT/statusseite.html"
+pruefe "Statusseite antwortet" test -s "$ARBEIT/statusseite.html"
+pruefe "Statusseite zeigt den Job" grep -q "http://ziel/takt" "$ARBEIT/statusseite.html"
+pruefe "Statusseite zeigt das Ergebnis OK" grep -q "OK (HTTP 200)" "$ARBEIT/statusseite.html"
 
 echo
 if [[ $fehler -gt 0 ]]; then
