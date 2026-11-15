@@ -2,7 +2,7 @@
 # dann `docker compose up -d`.
 services:
   webcron:
-    image: ghcr.io/celestial0579/webcron:latest   # oder eine feste Version/SHA, z. B. :v0.1.1
+    image: ghcr.io/celestial0579/webcron:latest   # oder eine feste Version, z. B. :0.1.3 (Release-Tags vX.Y.Z veröffentlichen :X.Y.Z)
     container_name: webcron
     restart: unless-stopped
     environment:

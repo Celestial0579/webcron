@@ -3,6 +3,7 @@ name: CI
 on:
   push:
     branches: [main]
+    tags: ['v[0-9]+.[0-9]+.[0-9]+']
   pull_request:
   workflow_dispatch:
 
@@ -37,8 +38,9 @@ jobs:
     env:
       # Pull Requests bauen das Abbild nur (prueft das Dockerfile), sie
       # schieben nichts in die Registry. Veroeffentlicht wird allein aus
-      # main -- per Push oder von Hand ueber workflow_dispatch.
-      VEROEFFENTLICHEN: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
+      # main (Push oder von Hand ueber workflow_dispatch: :latest und :<sha>)
+      # und aus Release-Tags vX.Y.Z (zusaetzlich :X.Y.Z).
+      VEROEFFENTLICHEN: ${{ github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
@@ -53,12 +55,25 @@ jobs:
       - name: Kontonamen kleinschreiben
         id: konto
         run: echo "name=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+      - name: Abbild-Tags festlegen
+        id: tags
+        env:
+          NAME: ${{ steps.konto.outputs.name }}
+        run: |
+          {
+            echo 'liste<<TAGS'
+            echo "ghcr.io/${NAME}/webcron:${GITHUB_SHA}"
+            if [ "${GITHUB_REF_TYPE}" = tag ]; then
+              echo "ghcr.io/${NAME}/webcron:${GITHUB_REF_NAME#v}"
+            else
+              echo "ghcr.io/${NAME}/webcron:latest"
+            fi
+            echo TAGS
+          } >> "$GITHUB_OUTPUT"
       - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           push: ${{ env.VEROEFFENTLICHEN == 'true' }}
-          tags: |
-            ghcr.io/${{ steps.konto.outputs.name }}/webcron:latest
-            ghcr.io/${{ steps.konto.outputs.name }}/webcron:${{ github.sha }}
+          tags: ${{ steps.tags.outputs.liste }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
