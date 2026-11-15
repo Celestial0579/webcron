@@ -12,6 +12,17 @@ services:
       # WEBCRON_UI_PORT: 0       # Status-UI abschalten
     volumes:
       - ./jobs.cron:/config/jobs.cron:ro
+    # Haertung: nur das Noetige. crond wechselt je Job die Identitaet
+    # (SETUID/SETGID), httpd laeuft als "nobody".
+    read_only: true
+    tmpfs:
+      - /run
+      - /tmp
+      - /etc/crontabs:mode=0755
+    cap_drop: [ALL]
+    cap_add: [SETUID, SETGID]
+    security_opt:
+      - no-new-privileges:true
     # Status-UI: standardmaessig nur auf dem Host selbst (127.0.0.1) erreichbar;
     # fuer den Blick aus dem eigenen Netz die Adresse bewusst aendern. Sie hat
     # keine Anmeldung — der Port gehoert deshalb hinter die Firewall des

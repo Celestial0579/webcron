@@ -22,6 +22,17 @@ services:
       WEBCRON_JOBS: /tests/takt.cron
     volumes:
       - testdaten:/tests:ro
+    # Haertung: nur das Noetige. crond wechselt je Job die Identitaet
+    # (SETUID/SETGID), httpd laeuft als "nobody".
+    read_only: true
+    tmpfs:
+      - /run
+      - /tmp
+      - /etc/crontabs:mode=0755
+    cap_drop: [ALL]
+    cap_add: [SETUID, SETGID]
+    security_opt:
+      - no-new-privileges:true
     depends_on:
       testdaten:
         condition: service_completed_successfully

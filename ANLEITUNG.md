@@ -35,6 +35,9 @@ docker run --rm -v "$PWD/jobs.cron:/config/jobs.cron:ro" \
 docker run -d --name webcron --restart unless-stopped \
   -e TZ=Europe/Berlin \
   -p 127.0.0.1:8080:8080 \
+  --read-only --tmpfs /run --tmpfs /tmp --tmpfs /etc/crontabs:mode=0755 \
+  --cap-drop ALL --cap-add SETUID --cap-add SETGID \
+  --security-opt no-new-privileges:true \
   -v "$PWD/jobs.cron:/config/jobs.cron:ro" \
   ghcr.io/celestial0579/webcron:latest
 ```
