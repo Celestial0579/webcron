@@ -1,0 +1,2 @@
+# Port 1 ist zu: der Aufruf scheitert, und kein Log darf Teile der URL zeigen.
+* * * * *  http://nutzer:geheim4@127.0.0.1:1/x?token=geheim4

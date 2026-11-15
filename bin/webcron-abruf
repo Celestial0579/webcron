@@ -69,6 +69,22 @@ else
     folgen="--location --max-redirs 10 --proto-redir $protokolle"
 fi
 
+# curl-Fehlermeldungen koennen die URL enthalten (Query-String, user:pw@).
+# stderr geht deshalb erst in eine Datei und wird maskiert weitergereicht.
+# `--globoff` verhindert zudem, dass curl [..] und {..} in der URL als Muster
+# auswertet (ein ungueltiges Muster liess curl die ganze URL ausgeben, ein
+# gueltiges loeste mehrere Aufrufe je Takt aus).
+# Ohne Zwischendatei kein Abruf; die Trap steht erst nach dem Erfolg (sonst
+# loeschte sie bei leerem/falschem Namen etwas anderes).
+FEHLDATEI=$(mktemp "$LAUFDIR/curl-fehler.XXXXXX") || {
+    echo "webcron-abruf: kann keine Zwischendatei in $LAUFDIR anlegen" >&2
+    exit 2
+}
+trap 'rm -f "$FEHLDATEI"' EXIT
+maskiere() {
+    sed -E 's#(://)[^/@[:space:]]*@#\1***@#g; s#\?[^[:space:]]*#?***#g'
+}
+
 start=$(date +%s)
 # shellcheck disable=SC2086
 antwort=$(
@@ -77,12 +93,13 @@ antwort=$(
         printf '%s\n' "$KOPFZEILEN" | while IFS= read -r kopf; do
             [ -n "$kopf" ] && printf 'header = "%s"\n' "$(curl_text "$kopf")"
         done
-    } | curl --silent --show-error --output /dev/null \
+    } | curl --silent --show-error --globoff --output /dev/null \
         --write-out '%{http_code} %{redirect_url}' \
         --max-time "$TIMEOUT" $folgen \
         --retry "$VERSUCHE" --retry-connrefused \
-        --user-agent "$AGENT" --config - 2>>"$ERR"
+        --user-agent "$AGENT" --config - 2>"$FEHLDATEI"
 ) || antwort="000 "
+[ ! -s "$FEHLDATEI" ] || maskiere < "$FEHLDATEI" >> "$ERR"
 code="${antwort%% *}"
 weiter="${antwort#* }"
 dauer=$(( $(date +%s) - start ))

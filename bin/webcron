@@ -135,14 +135,18 @@ uebersetze() {
 
         # shellcheck disable=SC2086
         set -- $rest
-        [ $# -ge 6 ] || fehler "$JOBS Zeile $nr: erwartet '<5 Cron-Felder> <URL> [Name:Wert ...]', gefunden: $zeile"
+        # Meldungen nennen nie Teile der Zeile (URL, Kopfzeilen-Werte): sie
+        # landen in `docker logs`, und bei jedem Neustart erneut.
+        [ $# -ge 6 ] || fehler "$JOBS Zeile $nr: erwartet '<5 Cron-Felder> <URL> [Name:Wert ...]', aber nur $# Wort/Woerter"
         min="$1"; std="$2"; tag="$3"; monat="$4"; wt="$5"; url="$6"
+        pos=0
         for feld in "$min" "$std" "$tag" "$monat" "$wt"; do
-            ist_cronfeld "$feld" || fehler "$JOBS Zeile $nr: '$feld' ist kein Cron-Feld (erlaubt: Ziffern * , - /)"
+            pos=$((pos + 1))
+            ist_cronfeld "$feld" || fehler "$JOBS Zeile $nr: das ${pos}. Wort ist kein Cron-Feld (erlaubt: Ziffern * , - /); fehlt ein Feld?"
         done
         case "$url" in
             http://*|https://*) ;;
-            *) fehler "$JOBS Zeile $nr: URL muss mit http:// oder https:// beginnen: $url" ;;
+            *) fehler "$JOBS Zeile $nr: die URL (6. Wort) muss mit http:// oder https:// beginnen" ;;
         esac
         case "$url" in
             *"'"*) fehler "$JOBS Zeile $nr: Hochkomma in der URL wird nicht unterstuetzt" ;;
@@ -150,8 +154,10 @@ uebersetze() {
 
         shift 6
         namen=""
+        knr=0
         for kopf in "$@"; do
-            ist_kopfzeile "$kopf" || fehler "$JOBS Zeile $nr: '$kopf' ist keine Kopfzeile (Form Name:Wert, ohne Leerzeichen und Hochkomma)"
+            knr=$((knr + 1))
+            ist_kopfzeile "$kopf" || fehler "$JOBS Zeile $nr: Kopfzeile $knr ist ungueltig (Form Name:Wert, Name aus Buchstaben, Ziffern und '-', Wert ohne Leerzeichen und Hochkomma)"
             namen="$namen ${kopf%%:*}"
         done
 

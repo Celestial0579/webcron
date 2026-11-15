@@ -108,7 +108,10 @@ Hochkommas enthalten — `Authorization: Bearer <token>` (mit Leerzeichen
 im Wert) geht deshalb nicht; Endpunkte mit eigenem Header wie
 `X-Cron-Secret` sind der vorgesehene Weg. Header-Werte behandelt webcron
 durchgehend als Secrets: Status-UI, Startprotokoll und `--pruefen`
-nennen nur die Namen, nie die Werte. Weder Kopfzeilen noch URL stehen
+nennen nur die Namen, nie die Werte; Fehlermeldungen der Konfigurations-
+prüfung nennen nur Zeile und Art des Fehlers, nie Teile der Zeile. Die
+URL gilt wörtlich: `[` `]` `{` `}` (z. B. `filter[status]=offen`) wertet
+curl nicht als Muster aus. Weder Kopfzeilen noch URL stehen
 auf einer Kommandozeile (crond-Log, `ps`, `/proc`): Die Crontab nennt
 je Job nur eine Nummer, URL und Kopfzeilen liegen in einer Datei, die
 nur root lesen kann, und curl bekommt sie über stdin.
@@ -160,7 +163,8 @@ nicht der Container.
 
 - Query-String und Zugangsdaten (`user:pw@`) in URLs werden in Logs und
   Status-UI maskiert (`?***`) und stehen auf keiner Kommandozeile;
-  trotzdem Geheimnisse bevorzugt als Kopfzeile übergeben.
+  auch Fehlermeldungen von curl und der Konfigurationsprüfung geben sie
+  nicht preis. Trotzdem Geheimnisse bevorzugt als Kopfzeile übergeben.
   Wo möglich, der Anwendung ein eigenes Cron-Token geben, das nichts
   anderes kann.
 - Der einzige Port ist die Status-UI (ohne Anmeldung) — im LAN in
