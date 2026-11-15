@@ -37,7 +37,7 @@ einer einzigen Textdatei, Logs und Status-Übersicht, sonst nichts.
 
 ```
 # <Minute> <Stunde> <Monatstag> <Monat> <Wochentag> <URL>
-*/5 * * * *  https://example.com/wp-cron.php?***
+*/5 * * * *  https://example.com/wp-cron.php?doing_wp_cron
 30 3 * * *   https://example.com/export/nightly?token=GEHEIM
 ```
 
@@ -51,7 +51,11 @@ docker run -d --name webcron --restart unless-stopped \
   ghcr.io/celestial0579/webcron:latest
 ```
 
-Die Status-Übersicht ist danach unter `http://<host>:8080/` erreichbar.
+Die Status-Übersicht ist danach auf dem Docker-Host unter
+`http://127.0.0.1:8080/` erreichbar (bewusst nur lokal gebunden, sie hat
+keine Anmeldung). Von einem anderen Rechner aus: SSH-Tunnel
+`ssh -L 8080:127.0.0.1:8080 <host>`, oder bewusst an eine LAN-Adresse
+binden (`-p <LAN-IP>:8080:8080`, nur hinter der Host-Firewall).
 
 Oder mit Compose: [docker-compose.yml](docker-compose.yml) anpassen und
 `docker compose up -d`.
@@ -120,15 +124,15 @@ $ docker logs webcron
 2026-08-09 14:40:02  FEHLER  HTTP 503  2s  https://example.com/wp-cron.php?***
 ```
 
-Als `OK` zählt jede 2xx- und 3xx-Antwort, alles andere als `FEHLER`
+Als `OK` zählt jede 2xx-Antwort (bei Jobs ohne Kopfzeilen auch 3xx), alles andere als `FEHLER`
 (`HTTP 000` = Server gar nicht erreichbar).
 
 Zusätzlich liefert eine schreibgeschützte **Status-UI** eine Übersicht
 aller Jobs mit letztem Aufruf, Ergebnis und Fehlerzähler:
-`http://<host>:8080/` (Port per `-p`/`ports:` veröffentlicht, siehe
-Schnellstart). Sie ist für den Blick aus dem eigenen Netz gedacht und
-hat bewusst keine Anmeldung — den Port also nicht ins Internet
-weiterreichen. Wer sie gar nicht will: `WEBCRON_UI_PORT=0` und die
+`http://127.0.0.1:8080/` auf dem Docker-Host (Port per `-p`/`ports:` nur
+an 127.0.0.1 gebunden, siehe Schnellstart; für andere Rechner SSH-Tunnel
+oder bewusst eine LAN-Adresse). Sie hat bewusst keine Anmeldung — den
+Port also nie ins Internet weiterreichen. Wer sie gar nicht will: `WEBCRON_UI_PORT=0` und die
 Port-Freigabe weglassen.
 
 Bearbeiten lässt sich dort nichts: Die Konfiguration ist die Datei,
