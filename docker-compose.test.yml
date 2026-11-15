@@ -10,7 +10,9 @@ services:
   # Dienste warten darauf, sonst laufen sie gegen ein leeres /tests.
   testdaten:
     build: ./tests
-    command: ["sh", "-c", "cp -a /vorlage/. /tests/"]
+    # Wie im Betrieb: Konfigurationsdateien nur fuer root lesbar (0600 in
+    # einem 0700-Verzeichnis). Der Test prueft, dass nobody sie nicht liest.
+    command: ["sh", "-c", "cp -a /vorlage/. /tests/ && chmod 600 /tests/*.cron && chmod 700 /tests"]
     volumes:
       - testdaten:/tests
 

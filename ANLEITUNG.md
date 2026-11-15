@@ -19,6 +19,17 @@ Datei `jobs.cron` erstellen, eine Zeile je Aufruf:
 Secrets gehören in einen Header (`Name:Wert`, ohne Leerzeichen), nicht in
 die URL — Query-Strings landen in Access-Logs.
 
+Die Datei enthält Secrets und gehört nur root: Sonst kann sie auch der
+Prozess der Status-UI (`nobody`) lesen.
+
+```bash
+sudo chown root:root jobs.cron && sudo chmod 600 jobs.cron
+```
+
+(Mit rootless Docker genügt `chmod 600 jobs.cron`. Später bearbeiten mit
+`sudoedit jobs.cron`.) Ohne Leserecht für root bricht webcron mit einer
+klaren Meldung ab; ist die Datei für alle lesbar, warnt es beim Start.
+
 ## 2. Probelauf
 
 Ruft jede URL sofort genau einmal auf; schlägt fehl, wenn eine nicht

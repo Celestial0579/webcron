@@ -6,6 +6,11 @@ FROM alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5
 # gestarteten Kindprozesse ab.
 RUN apk add --no-cache curl tzdata tini busybox-extras
 
+# /config nur fuer root: Wird die Konfiguration als Einzeldatei nach
+# /config/jobs.cron gemountet, kommt der Status-UI-Prozess (nobody) nicht
+# bis zur Datei, egal welche Rechte sie auf dem Host hat.
+RUN mkdir -m 0700 /config
+
 COPY bin/webcron bin/webcron-abruf /usr/local/bin/
 COPY www /www
 RUN chmod -R a+rX /www && chmod 755 /www/cgi-bin/status

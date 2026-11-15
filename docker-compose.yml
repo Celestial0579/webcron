@@ -1,5 +1,6 @@
 # Betriebsbeispiel: jobs.example.cron nach jobs.cron kopieren, anpassen,
-# dann `docker compose up -d`.
+# dann `docker compose up -d`. jobs.cron enthaelt Secrets:
+#   sudo chown root:root jobs.cron && sudo chmod 600 jobs.cron
 services:
   webcron:
     image: ghcr.io/celestial0579/webcron:latest   # oder eine feste Version, z. B. :0.1.3 (Release-Tags vX.Y.Z veröffentlichen :X.Y.Z)

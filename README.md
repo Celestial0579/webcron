@@ -41,6 +41,21 @@ einer einzigen Textdatei, Logs und Status-Übersicht, sonst nichts.
 30 3 * * *   https://example.com/export/nightly?token=GEHEIM
 ```
 
+Die Datei enthält Secrets. Sie sollte nur root gehören und lesen können,
+sonst liest sie auch der Prozess der Status-UI (`nobody`) — und jeder
+lokale Nutzer des Docker-Hosts:
+
+```bash
+sudo chown root:root jobs.cron && sudo chmod 600 jobs.cron
+```
+
+(Mit rootless Docker genügt `chmod 600 jobs.cron`.) Als Einzeldatei
+mounten wie unten, nicht das ganze Verzeichnis: Das Verzeichnis `/config`
+im Abbild ist `0700`. root im Container braucht Leserecht als Besitzer —
+unter `cap_drop: ALL` fehlt ihm `CAP_DAC_OVERRIDE`. Fehlt es, bricht der
+Start mit einer klaren Meldung ab; ist die Datei für alle lesbar, warnt
+webcron beim Start und bei `--pruefen`.
+
 Dann starten:
 
 ```bash
@@ -152,7 +167,10 @@ nicht der Container.
   Ordnung, aber nicht ins Internet weiterreichen. Ohne UI
   (`WEBCRON_UI_PORT=0`) braucht der Container gar keinen Port.
 - Die Status-UI läuft als `nobody` und sieht nur die maskierte Jobliste
-  und den Status, nie die Jobdateien mit URL-Secrets und Kopfzeilen.
+  und den Status, nie die Jobdateien mit URL-Secrets und Kopfzeilen —
+  und, wenn `jobs.cron` wie oben nur root gehört, auch nicht diese
+  Quelle (`/config` im Abbild ist `0700`, die Datei kommt als Einzeldatei
+  hinein).
 - Keine besonderen Rechte und kein beschreibbares Dateisystem außer
   `/run`, `/tmp` und `/etc/crontabs`: Die Beispiele (Compose, `docker run`)
   erzwingen das mit `read_only`, `tmpfs`, `cap_drop: ALL` (nur SETUID und

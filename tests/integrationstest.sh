@@ -120,6 +120,27 @@ pruefe_scheitert "Konfiguration mit Steuerzeichen wird abgelehnt" \
     "${COMPOSE[@]}" run --rm --no-deps --entrypoint sh webcron -c \
     "printf '* * * * *  http://ziel/ta\\033kt\\n' > /tmp/j.cron && WEBCRON_JOBS=/tmp/j.cron webcron --pruefen"
 
+# Rechte der Konfigurationsdatei: Die Testdaten sind nur fuer root lesbar
+# (siehe docker-compose.test.yml) -- wie im Betrieb. Eine fuer alle lesbare
+# Datei muss eine Warnung ausloesen, eine unlesbare einen klaren Abbruch.
+"${COMPOSE[@]}" run --rm --no-deps webcron --pruefen > "$ARBEIT/rechte-root.txt" 2>&1 || true
+pruefe "nur root lesbare Konfiguration wird angenommen" \
+    grep -q 'Konfiguration in Ordnung' "$ARBEIT/rechte-root.txt"
+pruefe_scheitert "nur root lesbare Konfiguration: keine Warnung" \
+    grep -q WARNUNG "$ARBEIT/rechte-root.txt"
+"${COMPOSE[@]}" run --rm --no-deps --entrypoint sh webcron -c \
+    'cp /tests/takt.cron /tmp/offen.cron && chmod 644 /tmp/offen.cron && WEBCRON_JOBS=/tmp/offen.cron webcron --pruefen' \
+    > "$ARBEIT/rechte-offen.txt" 2>&1 || true
+pruefe "fuer alle lesbare Konfiguration: --pruefen warnt" \
+    grep -q WARNUNG "$ARBEIT/rechte-offen.txt"
+rc=0
+"${COMPOSE[@]}" run --rm --no-deps --entrypoint sh webcron -c \
+    'cp /tests/takt.cron /tmp/zu.cron && chmod 000 /tmp/zu.cron && WEBCRON_JOBS=/tmp/zu.cron webcron --pruefen' \
+    > "$ARBEIT/rechte-zu.txt" 2>&1 || rc=$?
+pruefe "Konfiguration ohne Leserecht: Abbruch mit Exit != 0" test "$rc" -ne 0
+pruefe "Konfiguration ohne Leserecht: Meldung nennt das Problem" \
+    grep -q 'nicht lesbar' "$ARBEIT/rechte-zu.txt"
+
 echo
 echo "--- Einmal-Modus ---"
 pruefe "erreichbare URL wird als OK gewertet" \
@@ -160,6 +181,10 @@ pruefe "Status-UI (httpd) laeuft als nobody" \
     ui_prozess_nobody
 pruefe_scheitert "nobody kann die Jobdateien (Secrets) nicht lesen" \
     "${COMPOSE[@]}" exec -T --user nobody webcron cat /run/webcron/jobs/2
+pruefe_scheitert "nobody kann auch die Konfigurationsdatei selbst nicht lesen" \
+    "${COMPOSE[@]}" exec -T --user nobody webcron sh -c 'cat "$WEBCRON_JOBS"'
+pruefe "Gegenprobe: root liest die Konfigurationsdatei" \
+    "${COMPOSE[@]}" exec -T webcron sh -c 'cat "$WEBCRON_JOBS"'
 pruefe_scheitert "Dateisystem ist schreibgeschuetzt" \
     "${COMPOSE[@]}" exec -T webcron touch /usr/schreibtest
 pruefe "Statusseite antwortet" test -s "$ARBEIT/statusseite.html"

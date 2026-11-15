@@ -52,6 +52,32 @@ esac
 Eine Datei mit Zeilen '<5 Cron-Felder> <URL> [Name:Wert ...]' dorthin
 mounten, Vorlage: jobs.example.cron im Repo."
 
+# Ohne Leserecht scheitert das Einlesen spaeter mit einer unverstaendlichen
+# Meldung. Typischer Fall: eine Datei mit Rechten 0600, die einem normalen
+# Nutzer gehoert -- root im Container hat unter `cap_drop: ALL` kein
+# CAP_DAC_OVERRIDE und darf sie dann nicht lesen.
+# (Wirklich oeffnen statt `[ -r ]`: Fuer root liefert test je nach Build immer wahr.)
+( : < "$JOBS" ) 2>/dev/null || fehler "$JOBS ist nicht lesbar. Besitzer und Rechte der Datei auf dem Host
+setzen, z. B.: sudo chown root:root jobs.cron && sudo chmod 600 jobs.cron
+(root im Container ist ohne CAP_DAC_OVERRIDE nur dann leseberechtigt, wenn
+er Besitzer ist)."
+
+# Kann der Prozess der Status-UI (nobody) die Datei lesen? Naeherung ueber
+# die Rechte "andere": Datei lesbar und jedes Verzeichnis davor durchsuchbar.
+# Im Normalfall (Einzeldatei nach /config/jobs.cron gemountet) schuetzt schon
+# das Verzeichnis /config (0700) im Abbild.
+fuer_andere_lesbar() {
+    pfad=$(readlink -f "$1" 2>/dev/null) || pfad="$1"
+    modus=$(stat -c %a "$pfad" 2>/dev/null) || return 1
+    case "$modus" in *[4567]) ;; *) return 1 ;; esac
+    verz="$pfad"
+    while [ "$verz" != "/" ]; do
+        verz=$(dirname "$verz")
+        modus=$(stat -c %a "$verz" 2>/dev/null) || return 1
+        case "$modus" in *[1357]) ;; *) return 1 ;; esac
+    done
+}
+
 # Ein Cron-Feld: Ziffern, '*', ',', '-', '/' — mehr versteht busybox-crond
 # nicht. Geprueft wird der Zeichenvorrat, nicht der Wertebereich; eine
 # Minute '75' faellt erst crond auf.
@@ -176,8 +202,23 @@ installiere_jobs() {
     mkdir -p "$LAUFDIR/status"
 }
 
+# Die Status-UI laeuft als nobody. Ist die Konfiguration fuer alle lesbar,
+# liest nobody damit alle Secrets darin -- wer die UI erreicht und eine
+# Luecke im httpd/CGI ausnutzt, bekaeme sie. Nur Warnung: Der Betrieb
+# bleibt moeglich, die Rechte ist Sache des Betreibers.
+warne_wenn_lesbar() {
+    [ "$UI_PORT" != "0" ] || return 0
+    if fuer_andere_lesbar "$JOBS"; then
+        echo "webcron: WARNUNG: $JOBS ist fuer alle Nutzer im Container lesbar, auch fuer die" >&2
+        echo "webcron: Status-UI (nobody). Auf dem Host: sudo chown root:root jobs.cron &&" >&2
+        echo "webcron: sudo chmod 600 jobs.cron -- und die Datei als Einzeldatei nach" >&2
+        echo "webcron: /config/jobs.cron mounten, nicht das ganze Verzeichnis." >&2
+    fi
+}
+
 case "$MODUS" in
     --pruefen)
+        warne_wenn_lesbar
         echo "webcron: Konfiguration in Ordnung — $anzahl Job(s):"
         liste_jobs "$JOBLISTE_NEU"
         ;;
@@ -193,6 +234,7 @@ case "$MODUS" in
         [ "$fehlschlaege" -eq 0 ] || fehler "$fehlschlaege von $anzahl Aufruf(en) fehlgeschlagen"
         ;;
     "")
+        warne_wenn_lesbar
         mkdir -p "$(dirname "$CRONTAB")"
         installiere_jobs
         cp "$CRONTAB_NEU" "$CRONTAB"
