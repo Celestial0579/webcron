@@ -86,8 +86,16 @@ Hochkommas enthalten — `Authorization: Bearer <token>` (mit Leerzeichen
 im Wert) geht deshalb nicht; Endpunkte mit eigenem Header wie
 `X-Cron-Secret` sind der vorgesehene Weg. Header-Werte behandelt webcron
 durchgehend als Secrets: Status-UI, Startprotokoll und `--pruefen`
-nennen nur die Namen, nie die Werte — und auf der crond-Kommandozeile
-(sichtbar in Logs und `ps`) stehen sie gar nicht erst.
+nennen nur die Namen, nie die Werte. Weder Kopfzeilen noch URL stehen
+auf einer Kommandozeile (crond-Log, `ps`, `/proc`): Die Crontab nennt
+je Job nur eine Nummer, URL und Kopfzeilen liegen in einer Datei, die
+nur root lesen kann, und curl bekommt sie über stdin.
+
+**Weiterleitungen:** Jobs *mit* Kopfzeilen folgen keiner Weiterleitung —
+sonst gingen die Secrets auch an fremde Hosts oder über http. Eine
+3xx-Antwort zählt als `FEHLER` und nennt das Ziel (maskiert); die URL in
+`jobs.cron` muss das endgültige Ziel sein. Jobs ohne Kopfzeilen folgen
+Weiterleitungen, aber nie von https auf http.
 
 Nach einer Änderung an `jobs.cron` den Container neu starten
 (`docker restart webcron`); die Datei wird beim Start gelesen.
@@ -100,7 +108,7 @@ Nach einer Änderung an `jobs.cron` den Container neu starten
 | `WEBCRON_USER_AGENT` | `webcron (+…)` | User-Agent der Aufrufe |
 | `WEBCRON_UI_PORT` | `8080` | Port der Status-UI, `0` schaltet sie ab |
 | `WEBCRON_JOBS` | `/config/jobs.cron` | Pfad der Konfigurationsdatei |
-| `WEBCRON_LOGLEVEL` | `8` | crond-Gesprächigkeit (5 = auch Job-Starts) |
+| `WEBCRON_LOGLEVEL` | `8` | crond-Gesprächigkeit (kleiner = gesprächiger; die Job-Kommandozeile enthält nur die Jobnummer) |
 
 ## Logs und Status-UI
 
@@ -129,8 +137,8 @@ nicht der Container.
 ## Sicherheit
 
 - Query-String und Zugangsdaten (`user:pw@`) in URLs werden in Logs und
-  Status-UI maskiert (`?***`); trotzdem Geheimnisse bevorzugt als
-  Kopfzeile übergeben.
+  Status-UI maskiert (`?***`) und stehen auf keiner Kommandozeile;
+  trotzdem Geheimnisse bevorzugt als Kopfzeile übergeben.
   Wo möglich, der Anwendung ein eigenes Cron-Token geben, das nichts
   anderes kann.
 - Der einzige Port ist die Status-UI (ohne Anmeldung) — im LAN in

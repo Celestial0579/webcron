@@ -2,4 +2,6 @@
 # Der zweite Job prueft den Kopfzeilen-Weg durch die echte Crontab
 # (nicht nur durch --einmal): /kopf antwortet nur mit Header 200.
 * * * * *  http://ziel/takt
+# Query-String mit Secret: darf in keinem Log auftauchen.
+* * * * *  http://ziel/takt?token=geheim2
 * * * * *  http://ziel/kopf  X-Cron-Secret:geheim

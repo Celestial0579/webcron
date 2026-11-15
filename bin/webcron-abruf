@@ -1,13 +1,14 @@
 #!/bin/sh
-# Ruft eine einzelne Cronjob-URL auf, protokolliert das Ergebnis und
-# schreibt den Stand fuer die Status-UI fort. Wird von crond je
+# Ruft den Job mit der angegebenen Nummer auf, protokolliert das Ergebnis
+# und schreibt den Stand fuer die Status-UI fort. Wird von crond je
 # Zeitplan-Takt gestartet.
 #
-# Aufruf: webcron-abruf <url> [Name:Wert ...]
-# Kopfzeilen kommen als Argumente (Einmal-Modus) — oder, wenn keine
-# uebergeben wurden, aus $LAUFDIR/koepfe/<urlhash>. Auf der crond-
-# Kommandozeile stehen sie absichtlich nicht: crond loggt sie, und ueber
-# /proc waeren sie in `ps` sichtbar — kein Platz fuer Secrets.
+# Aufruf: webcron-abruf --job <nr>
+# URL und Kopfzeilen stehen in $LAUFDIR/jobs/<nr> (nur fuer root lesbar,
+# von `webcron` beim Start angelegt). Sie stehen absichtlich nirgends auf
+# einer Kommandozeile: crond loggt sie, und ueber /proc waeren sie in `ps`
+# sichtbar -- kein Platz fuer Secrets. Auch curl bekommt sie nicht als
+# Argumente, sondern als Konfiguration ueber stdin.
 set -u
 
 # URL fuer Anzeige und Logs: Zugangsdaten (user:pw@) und Query-String
@@ -24,27 +25,20 @@ anzeige_url() {
     printf '%s' "$u"
 }
 
-URL="${1:?Aufruf: webcron-abruf <url> [Name:Wert ...]}"
-shift
+[ "${1:-}" = "--job" ] || { echo "Aufruf: webcron-abruf --job <nr>" >&2; exit 2; }
+JOB="${2:-}"
+case "$JOB" in
+    "" | *[!0-9]*) echo "webcron-abruf: ungueltige Jobnummer '$JOB'" >&2; exit 2 ;;
+esac
 
 LAUFDIR="${WEBCRON_LAUFDIR:-/run/webcron}"
 STATUSDIR="$LAUFDIR/status"
-kennung=$(printf '%s' "$URL" | md5sum | cut -d' ' -f1)
+JOBDATEI="$LAUFDIR/jobs/$JOB"
+[ -f "$JOBDATEI" ] || { echo "webcron-abruf: Job $JOB nicht gefunden" >&2; exit 2; }
 
-if [ $# -eq 0 ] && [ -f "$LAUFDIR/koepfe/$kennung" ]; then
-    while IFS= read -r kopf; do
-        [ -n "$kopf" ] && set -- "$@" "$kopf"
-    done < "$LAUFDIR/koepfe/$kennung"
-fi
+IFS= read -r URL < "$JOBDATEI"
+KOPFZEILEN=$(sed 1d "$JOBDATEI")
 
-# Die Kopfzeilen in curl-Form bringen: aus 'Name:Wert' wird
-# '-H Name:Wert'. Danach steht die fertige Argumentliste wieder in "$@".
-restliche=$#
-while [ "$restliche" -gt 0 ]; do
-    kopf="$1"; shift
-    set -- "$@" -H "$kopf"
-    restliche=$((restliche - 1))
-done
 TIMEOUT="${WEBCRON_TIMEOUT:-60}"
 VERSUCHE="${WEBCRON_VERSUCHE:-2}"
 AGENT="${WEBCRON_USER_AGENT:-webcron (+https://github.com/Celestial0579/webcron)}"
@@ -56,27 +50,57 @@ OUT=/proc/1/fd/1
 ERR=/proc/1/fd/2
 [ -w "$OUT" ] || { OUT=/dev/stdout; ERR=/dev/stderr; }
 
+# Zeichenketten fuer eine curl-Konfigurationsdatei: \ und " maskieren.
+curl_text() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
+
+# Weiterleitungen: Kopfzeilen (Secrets) duerfen nie an ein anderes Ziel
+# gehen als das konfigurierte -- curl schickt -H-Kopfzeilen bei jeder
+# Weiterleitung mit, auch zu fremden Hosts und ueber http. Jobs mit
+# Kopfzeilen folgen deshalb keiner Weiterleitung; die URL in der
+# Konfiguration muss das endgueltige Ziel sein. Jobs ohne Kopfzeilen folgen
+# ihnen, aber nie von https auf http.
+case "$URL" in
+    https://*) protokolle="=https" ;;
+    *)         protokolle="=http,https" ;;
+esac
+if [ -n "$KOPFZEILEN" ]; then
+    folgen=""
+else
+    folgen="--location --max-redirs 10 --proto-redir $protokolle"
+fi
+
 start=$(date +%s)
-code=$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
-    --location --max-time "$TIMEOUT" \
-    --retry "$VERSUCHE" --retry-connrefused \
-    --user-agent "$AGENT" "$@" "$URL" 2>>"$ERR") || code=000
+# shellcheck disable=SC2086
+antwort=$(
+    {
+        printf 'url = "%s"\n' "$(curl_text "$URL")"
+        printf '%s\n' "$KOPFZEILEN" | while IFS= read -r kopf; do
+            [ -n "$kopf" ] && printf 'header = "%s"\n' "$(curl_text "$kopf")"
+        done
+    } | curl --silent --show-error --output /dev/null \
+        --write-out '%{http_code} %{redirect_url}' \
+        --max-time "$TIMEOUT" $folgen \
+        --retry "$VERSUCHE" --retry-connrefused \
+        --user-agent "$AGENT" --config - 2>>"$ERR"
+) || antwort="000 "
+code="${antwort%% *}"
+weiter="${antwort#* }"
 dauer=$(( $(date +%s) - start ))
 zeit=$(date '+%Y-%m-%d %H:%M:%S')
 
 case "$code" in
-    2*|3*) ergebnis=OK ;;
-    *)     ergebnis=FEHLER ;;
+    2*) ergebnis=OK ;;
+    3*) if [ -n "$KOPFZEILEN" ]; then ergebnis=FEHLER; else ergebnis=OK; fi ;;
+    *)  ergebnis=FEHLER ;;
 esac
 
-# Stand fuer die Status-UI: eine Datei je URL, benannt nach ihrem Hash.
+# Stand fuer die Status-UI: eine Datei je Job, benannt nach seiner Nummer.
 # Format: Zeit, HTTP-Code, Dauer, Ergebnis, Zaehler OK, Zaehler Fehler.
 mkdir -p "$STATUSDIR"
-kennung=$(printf '%s' "$URL" | md5sum | cut -d' ' -f1)
 ok_bisher=0
 fehler_bisher=0
-if [ -f "$STATUSDIR/$kennung" ]; then
-    IFS="$(printf '\t')" read -r _ _ _ _ ok_bisher fehler_bisher < "$STATUSDIR/$kennung" || true
+if [ -f "$STATUSDIR/$JOB" ]; then
+    IFS="$(printf '\t')" read -r _ _ _ _ ok_bisher fehler_bisher < "$STATUSDIR/$JOB" || true
 fi
 if [ "$ergebnis" = OK ]; then
     ok_bisher=$((ok_bisher + 1))
@@ -85,11 +109,15 @@ else
 fi
 printf '%s\t%s\t%s\t%s\t%s\t%s\n' \
     "$zeit" "$code" "$dauer" "$ergebnis" "$ok_bisher" "$fehler_bisher" \
-    > "$STATUSDIR/$kennung"
+    > "$STATUSDIR/$JOB"
 
+anzeige=$(anzeige_url "$URL")
 if [ "$ergebnis" = OK ]; then
-    echo "$zeit  OK      HTTP $code  ${dauer}s  $(anzeige_url "$URL")" >> "$OUT"
+    echo "$zeit  OK      HTTP $code  ${dauer}s  $anzeige" >> "$OUT"
 else
-    echo "$zeit  FEHLER  HTTP $code  ${dauer}s  $(anzeige_url "$URL")" >> "$ERR"
+    echo "$zeit  FEHLER  HTTP $code  ${dauer}s  $anzeige" >> "$ERR"
+    case "$code" in
+        3*) echo "$zeit  Weiterleitung nach $(anzeige_url "$weiter") nicht befolgt: Jobs mit Kopfzeilen folgen keiner Weiterleitung, die URL in der Konfiguration anpassen" >> "$ERR" ;;
+    esac
     exit 1
 fi

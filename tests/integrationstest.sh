@@ -113,6 +113,11 @@ pruefe "Kopfzeile wird mitgesendet (Ziel verlangt X-Cron-Secret)" \
 pruefe_scheitert "Gegenprobe: ohne Kopfzeile lehnt das Ziel mit 403 ab" \
     "${COMPOSE[@]}" run --rm -e WEBCRON_JOBS=/tests/kopf-ohne.cron webcron --einmal
 
+pruefe_scheitert "Kopfzeilen-Job folgt keiner Weiterleitung (3xx ist Fehler)" \
+    "${COMPOSE[@]}" run --rm -e WEBCRON_JOBS=/tests/weiter.cron webcron --einmal
+pruefe_scheitert "das Weiterleitungsziel wurde nie angefragt" \
+    log_enthaelt ziel 'GET /sekundaer'
+
 echo
 echo "--- crond-Betrieb (warte auf den ersten Takt, bis zu 90 s) ---"
 pruefe "crond ruft die URL nach Zeitplan auf" \
@@ -123,6 +128,10 @@ pruefe "auch der Kopfzeilen-Job kommt durch die Crontab (HTTP 200 auf /kopf)" \
     warte_auf_log webcron 'OK  *HTTP 200 .* http://ziel/kopf' 30
 pruefe_scheitert "das Startprotokoll verraet den Header-Wert nicht" \
     log_enthaelt webcron 'geheim'
+pruefe "der Aufruf mit Query-String kam beim Ziel an" \
+    warte_auf_log ziel 'GET /takt?token=geheim2' 30
+pruefe_scheitert "der Query-String steht in keinem Log von webcron (crond-Joblog eingeschlossen)" \
+    log_enthaelt webcron 'geheim2'
 
 echo
 echo "--- Status-UI ---"

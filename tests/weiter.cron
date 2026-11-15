@@ -1,0 +1,3 @@
+# Kopfzeile + Weiterleitung: der Job darf der Weiterleitung nicht folgen
+# (sonst ginge das Secret an /sekundaer).
+0 0 1 1 *  http://ziel/weiter  X-Cron-Secret:geheim

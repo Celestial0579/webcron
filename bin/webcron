@@ -63,7 +63,7 @@ ist_cronfeld() {
 
 # Eine Kopfzeile: Name:Wert. Der Name wie in HTTP ueblich (Buchstaben,
 # Ziffern, '-'), der Wert beliebig, aber ohne Leerzeichen (die Zeile ist
-# schon in Woerter zerlegt) und ohne Hochkomma (wegen der Crontab-Quotung).
+# schon in Woerter zerlegt) und ohne Hochkomma.
 ist_kopfzeile() {
     case "$1" in
         *"'"*) return 1 ;;
@@ -77,15 +77,21 @@ ist_kopfzeile() {
     [ -n "${1#*:}" ]
 }
 
-# '%' bedeutet in einer Crontab Zeilenumbruch und muss geschuetzt werden.
-krontauglich() { printf '%s' "$1" | sed 's/%/\\%/g'; }
-
-# Liest $JOBS, prueft jede Zeile und schreibt eine Crontab nach $1 sowie
-# die Jobliste (Zeitplan<TAB>URL<TAB>Kopfzeilen) nach $2. Bricht bei der
-# ersten kaputten Zeile ab — ein halber Zeitplan waere schlimmer als keiner.
+# Liest $JOBS, prueft jede Zeile und schreibt
+#   - eine Crontab nach $1; sie nennt je Job nur dessen Nummer
+#     (`webcron-abruf --job <nr>`), weder URL noch Kopfzeilen: crond
+#     protokolliert die Job-Kommandozeile, und ueber /proc waere sie
+#     in `ps` sichtbar -- beides kein Platz fuer Secrets,
+#   - die Jobliste fuer die Anzeige nach $2 (Zeitplan<TAB>maskierte URL
+#     <TAB>Kopfzeilen-Namen<TAB>Nummer), ohne Werte,
+#   - je Job eine Datei $3/<nr> mit der URL (1. Zeile) und den
+#     Kopfzeilen (eine je Zeile); das Verzeichnis ist nur fuer root lesbar.
+# Bricht bei der ersten kaputten Zeile ab -- ein halber Zeitplan waere
+# schlimmer als keiner.
 uebersetze() {
     ziel="$1"
     jobliste="$2"
+    jobdir="$3"
     : > "$ziel"
     : > "$jobliste"
     anzahl=0
@@ -111,80 +117,81 @@ uebersetze() {
         esac
 
         shift 6
-        koepfe=""
+        namen=""
         for kopf in "$@"; do
             ist_kopfzeile "$kopf" || fehler "$JOBS Zeile $nr: '$kopf' ist keine Kopfzeile (Form Name:Wert, ohne Leerzeichen und Hochkomma)"
-            koepfe="$koepfe$kopf "
+            namen="$namen ${kopf%%:*}"
         done
 
-        # Die Kopfzeilen stehen absichtlich NICHT mit in der Crontab:
-        # crond druckt die Job-Kommandozeile in die Logs, und ueber
-        # /proc/<pid>/cmdline waere sie auch in `ps` sichtbar — beides
-        # kein Platz fuer Secrets. webcron-abruf holt sie sich aus
-        # $LAUFDIR/koepfe/<urlhash> (siehe Startmodus unten).
-        printf '%s %s %s %s %s webcron-abruf '\''%s'\''\n' \
-            "$min" "$std" "$tag" "$monat" "$wt" "$(krontauglich "$url")" >> "$ziel"
-        printf '%s %s %s %s %s\t%s\t%s\n' "$min" "$std" "$tag" "$monat" "$wt" "$url" "$koepfe" >> "$jobliste"
         anzahl=$((anzahl + 1))
+        {
+            printf '%s\n' "$url"
+            [ $# -eq 0 ] || printf '%s\n' "$@"
+        } > "$jobdir/$anzahl"
+        printf '%s %s %s %s %s webcron-abruf --job %s\n' \
+            "$min" "$std" "$tag" "$monat" "$wt" "$anzahl" >> "$ziel"
+        namen="${namen# }"
+        printf '%s %s %s %s %s\t%s\t%s\t%s\n' "$min" "$std" "$tag" "$monat" "$wt" \
+            "$(anzeige_url "$url")" "${namen:--}" "$anzahl" >> "$jobliste"
     done < "$JOBS"
     [ "$anzahl" -gt 0 ] || fehler "$JOBS enthaelt keinen einzigen Job"
 }
 
-# Schreibt die Jobliste als Uebersicht — mit maskierten Kopfzeilen-Werten.
+# Schreibt die Jobliste als Uebersicht -- mit maskierten Kopfzeilen-Werten.
 # Die Uebersicht landet in Ausgaben und damit in Container-Logs; Header-
-# Werte sind Secrets und gehoeren dort nie hinein (die Crontab selbst
-# braucht sie, aber die ist eine Datei, kein Log).
+# Werte sind Secrets und gehoeren dort nie hinein.
 liste_jobs() {
-    while IFS="$(printf '\t')" read -r plan url koepfe; do
-        namen=""
-        for kopf in $koepfe; do
-            namen="$namen ${kopf%%:*}:***"
+    while IFS="$(printf '\t')" read -r plan url namen _; do
+        anz=""
+        for n in $namen; do
+            [ "$n" = "-" ] || anz="$anz $n:***"
         done
-        printf '  %s %s%s\n' "$plan" "$(anzeige_url "$url")" "$namen"
+        printf '  %s %s%s\n' "$plan" "$url" "$anz"
     done < "$1"
 }
 
 CRONTAB_NEU=$(mktemp)
 JOBLISTE_NEU=$(mktemp)
-uebersetze "$CRONTAB_NEU" "$JOBLISTE_NEU"
+JOBDIR_NEU=$(mktemp -d)
+chmod 700 "$JOBDIR_NEU"
+aufraeumen() { rm -rf "$CRONTAB_NEU" "$JOBLISTE_NEU" "$JOBDIR_NEU"; }
+trap aufraeumen EXIT
+uebersetze "$CRONTAB_NEU" "$JOBLISTE_NEU" "$JOBDIR_NEU"
 anzahl=$(wc -l < "$JOBLISTE_NEU" | tr -d ' ')
+
+# Die Jobdateien (URL und Kopfzeilen) fuer webcron-abruf bereitstellen,
+# alte Staende und Status verwerfen: die Nummern gelten nur fuer diese
+# Konfiguration.
+installiere_jobs() {
+    mkdir -p "$LAUFDIR"
+    rm -rf "$LAUFDIR/jobs" "$LAUFDIR/koepfe" "$LAUFDIR/status"
+    cp -a "$JOBDIR_NEU" "$LAUFDIR/jobs"
+    chmod 700 "$LAUFDIR/jobs"
+    mkdir -p "$LAUFDIR/status"
+}
 
 case "$MODUS" in
     --pruefen)
         echo "webcron: Konfiguration in Ordnung — $anzahl Job(s):"
         liste_jobs "$JOBLISTE_NEU"
-        rm -f "$CRONTAB_NEU" "$JOBLISTE_NEU"
         ;;
     --einmal)
         echo "webcron: rufe jede der $anzahl URL(s) einmal auf"
+        installiere_jobs
         fehlschlaege=0
-        while IFS="$(printf '\t')" read -r _ url koepfe; do
-            # Kopfzeilen enthalten weder Leerzeichen noch Glob-Zeichen —
-            # das Aufteilen in Woerter ist hier Absicht.
-            # shellcheck disable=SC2086
-            webcron-abruf "$url" $koepfe || fehlschlaege=$((fehlschlaege + 1))
-        done < "$JOBLISTE_NEU"
-        rm -f "$CRONTAB_NEU" "$JOBLISTE_NEU"
+        nr=1
+        while [ "$nr" -le "$anzahl" ]; do
+            webcron-abruf --job "$nr" || fehlschlaege=$((fehlschlaege + 1))
+            nr=$((nr + 1))
+        done
         [ "$fehlschlaege" -eq 0 ] || fehler "$fehlschlaege von $anzahl Aufruf(en) fehlgeschlagen"
         ;;
     "")
-        mkdir -p "$(dirname "$CRONTAB")" "$LAUFDIR/status"
+        mkdir -p "$(dirname "$CRONTAB")"
+        installiere_jobs
         cp "$CRONTAB_NEU" "$CRONTAB"
         cp "$JOBLISTE_NEU" "$LAUFDIR/jobs.tsv"
 
-        # Kopfzeilen je URL in Dateien ablegen (statt auf der crond-
-        # Kommandozeile, siehe uebersetze) — nur fuer root lesbar.
-        rm -rf "$LAUFDIR/koepfe"
-        mkdir -p "$LAUFDIR/koepfe"
-        chmod 700 "$LAUFDIR/koepfe"
-        while IFS="$(printf '\t')" read -r _ url koepfe; do
-            [ -n "$koepfe" ] || continue
-            kennung=$(printf '%s' "$url" | md5sum | cut -d' ' -f1)
-            # shellcheck disable=SC2086
-            printf '%s\n' $koepfe > "$LAUFDIR/koepfe/$kennung"
-        done < "$LAUFDIR/jobs.tsv"
-
-        rm -f "$CRONTAB_NEU" "$JOBLISTE_NEU"
         echo "webcron: $anzahl Job(s) geladen aus $JOBS:"
         liste_jobs "$LAUFDIR/jobs.tsv"
 
@@ -197,6 +204,9 @@ case "$MODUS" in
             echo "webcron: Status-UI abgeschaltet (WEBCRON_UI_PORT=0)"
         fi
 
+        # exec ersetzt die Shell, der trap-Aufraeumer laeuft dann nicht
+        # mehr: die Dateien selbst sind schon kopiert.
+        rm -rf "$CRONTAB_NEU" "$JOBLISTE_NEU" "$JOBDIR_NEU"
         echo "webcron: starte crond (Zeitzone: ${TZ:-UTC})"
         exec crond -f -d "${WEBCRON_LOGLEVEL:-8}"
         ;;

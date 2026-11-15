@@ -10,12 +10,18 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 class Ziel(BaseHTTPRequestHandler):
     def do_GET(self):
-        if self.path == "/kopf":
+        pfad = self.path.split("?")[0]
+        if pfad == "/weiter":
+            self.send_response(302)
+            self.send_header("Location", "/sekundaer")
+            self.end_headers()
+            return
+        if pfad == "/kopf":
             if self.headers.get("X-Cron-Secret") == "geheim":
                 self.send_response(200)
             else:
                 self.send_response(403)
-        elif self.path in ("/takt", "/einmal"):
+        elif pfad in ("/takt", "/einmal", "/sekundaer"):
             self.send_response(200)
         else:
             self.send_response(404)
