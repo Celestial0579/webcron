@@ -6,7 +6,7 @@
 # (wp-cron.php, cron.php, …) nach Zeitplan per HTTP auf.
 #
 # Aufrufarten:
-#   webcron             Konfiguration pruefen, dann crond starten (Normalfall)
+#   webcron             Konfiguration pruefen, dann supercronic starten (Normalfall)
 #   webcron --pruefen   nur die Konfiguration pruefen
 #   webcron --einmal    jede URL sofort genau einmal aufrufen; Exit != 0,
 #                       sobald ein Aufruf scheitert (fuer Probelaeufe/Tests)
@@ -22,10 +22,13 @@ set -eu
 set -f
 
 JOBS="${WEBCRON_JOBS:-/config/jobs.cron}"
-CRONTAB="${WEBCRON_CRONTAB:-/etc/crontabs/root}"
 LAUFDIR="${WEBCRON_LAUFDIR:-/run/webcron}"
+CRONTAB="${WEBCRON_CRONTAB:-$LAUFDIR/crontab}"
 UI_PORT="${WEBCRON_UI_PORT:-8080}"
 MODUS="${1:-}"
+DROP=""
+# Benutzer, unter dem der Zeitplaner und die Abrufe laufen (siehe Dockerfile).
+DIENST_NUTZER="${WEBCRON_DIENST_NUTZER:-webcron}"
 
 # URL fuer Anzeige und Logs: Zugangsdaten (user:pw@) und Query-String
 # koennen Secrets tragen und werden maskiert.
@@ -157,7 +160,7 @@ ist_kopfzeile() {
 #   - die Jobliste fuer die Anzeige nach $2 (Zeitplan<TAB>maskierte URL
 #     <TAB>Kopfzeilen-Namen<TAB>Nummer), ohne Werte,
 #   - je Job eine Datei $3/<nr> mit der URL (1. Zeile) und den
-#     Kopfzeilen (eine je Zeile); das Verzeichnis ist nur fuer root lesbar.
+#     Kopfzeilen (eine je Zeile); das Verzeichnis ist nur fuer den Dienst-Benutzer lesbar.
 # Bricht bei der ersten kaputten Zeile ab -- ein halber Zeitplan waere
 # schlimmer als keiner.
 uebersetze() {
@@ -255,12 +258,26 @@ anzahl=$(wc -l < "$JOBLISTE_NEU" | tr -d ' ')
 # Die Jobdateien (URL und Kopfzeilen) fuer webcron-abruf bereitstellen,
 # alte Staende und Status verwerfen: die Nummern gelten nur fuer diese
 # Konfiguration.
+#
+# DROP ist leer (alles als aktueller Benutzer) oder `su-exec <nutzer>:<gruppe>`:
+# Im Normalbetrieb schreibt webcron diese Dateien AS $DIENST_NUTZER, statt sie
+# als root anzulegen und zu uebergeben. Das braucht weder CAP_CHOWN noch
+# CAP_DAC_OVERRIDE (beide fehlen unter `cap_drop: ALL`), und die Dateien
+# gehoeren von Anfang an dem Benutzer, der sie spaeter liest. Was root liest
+# (Konfiguration, Zwischendateien), reicht root per Umleitung durch.
+als_dienst() { $DROP "$@"; }
 installiere_jobs() {
-    mkdir -p "$LAUFDIR"
-    rm -rf "$LAUFDIR/jobs" "$LAUFDIR/koepfe" "$LAUFDIR/status"
-    cp -a "$JOBDIR_NEU" "$LAUFDIR/jobs"
-    chmod 700 "$LAUFDIR/jobs"
-    mkdir -p "$LAUFDIR/status"
+    als_dienst mkdir -p "$LAUFDIR"
+    als_dienst rm -rf "$LAUFDIR/jobs" "$LAUFDIR/koepfe" "$LAUFDIR/status"
+    als_dienst mkdir -m 700 "$LAUFDIR/jobs"
+    tar -c -C "$JOBDIR_NEU" . | als_dienst tar -x -C "$LAUFDIR/jobs"
+    als_dienst mkdir "$LAUFDIR/status"
+}
+
+# Legt $2 als Datei $1 an (Modus 644, Besitzer ist der Dienst-Benutzer).
+schreibe_datei() {
+    # shellcheck disable=SC2016 # $1 soll erst in der Unter-Shell expandieren
+    als_dienst sh -c 'cat > "$1"' _ "$1" < "$2"
 }
 
 # Die Status-UI laeuft als nobody. Ist die Konfiguration fuer alle lesbar,
@@ -296,12 +313,28 @@ case "$MODUS" in
         ;;
     "")
         warne_wenn_lesbar
-        mkdir -p "$(dirname "$CRONTAB")"
+        # Ab hier braucht nichts mehr root: Wer als root gestartet ist
+        # (Normalfall; root liest die nur fuer root lesbare Konfiguration),
+        # gibt die Rechte ab. Die Status-UI geht an "nobody", der Zeitplaner
+        # an $DIENST_NUTZER. Nach dem exec unten laeuft im Container kein
+        # Prozess mehr als root. Bei einem Start ohne root (z. B. `--user`)
+        # entfaellt der Wechsel, dann teilen sich UI und Zeitplaner den
+        # Benutzer.
+        if [ "$(id -u)" = 0 ]; then
+            DROP="su-exec $DIENST_NUTZER:$DIENST_NUTZER"
+            UI_NUTZER="-u nobody"
+        else
+            DROP=""
+            UI_NUTZER=""
+            echo "webcron: WARNUNG: nicht als root gestartet; Status-UI und Zeitplaner teilen sich den Benutzer" >&2
+        fi
         installiere_jobs
-        cp "$CRONTAB_NEU" "$CRONTAB"
-        cp "$JOBLISTE_NEU" "$LAUFDIR/jobs.tsv"
-        # mktemp legt 0600 an; die Status-UI (nobody) muss die maskierte Liste lesen.
-        chmod 644 "$LAUFDIR/jobs.tsv"
+        # Die Dateien sind fuer alle lesbar (644): Die Status-UI (nobody) liest
+        # die maskierte Liste, der Zeitplaner die Crontab; beide nennen nur
+        # Jobnummern bzw. maskierte URLs, keine Secrets.
+        als_dienst mkdir -p "$(dirname "$CRONTAB")"
+        schreibe_datei "$CRONTAB" "$CRONTAB_NEU"
+        schreibe_datei "$LAUFDIR/jobs.tsv" "$JOBLISTE_NEU"
 
         echo "webcron: $anzahl Job(s) geladen aus $JOBS:"
         liste_jobs "$LAUFDIR/jobs.tsv"
@@ -311,7 +344,8 @@ case "$MODUS" in
         if [ "$UI_PORT" != "0" ]; then
             # Als "nobody": Der netzseitige Prozess braucht nur jobs.tsv
             # (maskiert) und status/, nie die Jobdateien mit den Secrets.
-            httpd -u nobody -p "$UI_PORT" -h /www
+            # shellcheck disable=SC2086
+            httpd $UI_NUTZER -p "$UI_PORT" -h /www
             echo "webcron: Status-UI auf Port $UI_PORT (nur containerintern, sofern nicht veroeffentlicht)"
         else
             echo "webcron: Status-UI abgeschaltet (WEBCRON_UI_PORT=0)"
@@ -320,7 +354,22 @@ case "$MODUS" in
         # exec ersetzt die Shell, der trap-Aufraeumer laeuft dann nicht
         # mehr: die Dateien selbst sind schon kopiert.
         rm -rf "$CRONTAB_NEU" "$JOBLISTE_NEU" "$JOBDIR_NEU"
-        echo "webcron: starte crond (Zeitzone: ${TZ:-UTC})"
-        exec crond -f -d "${WEBCRON_LOGLEVEL:-8}"
+        # Gespraechigkeit: wie zuvor beim busybox-crond zaehlt WEBCRON_LOGLEVEL
+        # (Standard 8); kleiner als 8 schaltet die Fehlersuche ein, groesser
+        # als 8 lasst supercronic bis auf Fehler schweigen.
+        loglevel="${WEBCRON_LOGLEVEL:-8}"
+        case "$loglevel" in
+            "" | *[!0-9]*) loglevel=8 ;;
+        esac
+        if [ "$loglevel" -lt 8 ]; then
+            sc_art="-debug"
+        elif [ "$loglevel" -gt 8 ]; then
+            sc_art="-quiet"
+        else
+            sc_art=""
+        fi
+        echo "webcron: starte supercronic (Zeitzone: ${TZ:-UTC}, Benutzer: ${DROP:+$DIENST_NUTZER}${DROP:-$(id -un)})"
+        # shellcheck disable=SC2086
+        exec $DROP supercronic $sc_art "$CRONTAB"
         ;;
 esac

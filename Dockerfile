@@ -2,9 +2,20 @@ FROM alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5
 
 # curl macht die eigentlichen Aufrufe. tzdata sorgt dafuer, dass
 # TZ=Europe/Berlin wirklich Berliner Zeit bedeutet. busybox-extras bringt
-# den httpd fuer die Status-UI, tini raeumt die von crond und httpd
-# gestarteten Kindprozesse ab.
-RUN apk add --no-cache curl tzdata tini busybox-extras
+# den httpd fuer die Status-UI.
+#
+# supercronic ersetzt den busybox-crond (#25): Der braucht root, um je Job die
+# Identitaet zu wechseln; supercronic laeuft als gewoehnlicher Benutzer und
+# fuehrt die Jobs unter derselben Identitaet aus. su-exec gibt beim Start die
+# root-Rechte ab, bevor der Zeitplaner laeuft.
+RUN apk add --no-cache curl tzdata busybox-extras supercronic su-exec \
+    && addgroup -S -g 10001 webcron \
+    && adduser -S -D -H -u 10001 -G webcron -s /sbin/nologin webcron
+
+# /run muss fuer den Dienst-Benutzer beschreibbar sein: Er legt dort das
+# Laufverzeichnis /run/webcron an. Ein tmpfs auf /run (read_only-Betrieb)
+# uebernimmt die Rechte dieses Verzeichnisses.
+RUN chmod 1777 /run
 
 # /config nur fuer root: Wird die Konfiguration als Einzeldatei nach
 # /config/jobs.cron gemountet, kommt der Status-UI-Prozess (nobody) nicht
@@ -15,10 +26,15 @@ COPY bin/webcron bin/webcron-abruf /usr/local/bin/
 COPY www /www
 RUN chmod -R a+rX /www && chmod 755 /www/cgi-bin/status
 
-# crond braucht root, um /etc/crontabs/root zu lesen und Jobs zu starten;
-# der Container bleibt deshalb bei root. Er veroeffentlicht von sich aus
-# keinen Port und fuehrt nur die konfigurierten Aufrufe aus.
+# Kein Dauerprozess laeuft als root (#25). Der Container startet als root,
+# weil nur root die nur fuer root lesbare Konfiguration einlesen und die
+# Status-UI (httpd, Benutzer nobody) und den Zeitplaner (supercronic,
+# Benutzer webcron) unter getrennten Benutzern starten kann. `webcron` gibt
+# die Rechte ab und ersetzt sich per exec durch supercronic; danach gehoert
+# keinem Prozess mehr root, und supercronic ist PID 1. Der Container
+# veroeffentlicht von sich aus keinen Port und fuehrt nur die konfigurierten
+# Aufrufe aus.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD sh -c 'pidof crond >/dev/null && { [ "${WEBCRON_UI_PORT:-8080}" = "0" ] || curl -sf "http://127.0.0.1:${WEBCRON_UI_PORT:-8080}/cgi-bin/status" >/dev/null; }'
+    CMD sh -c 'pidof supercronic >/dev/null && { [ "${WEBCRON_UI_PORT:-8080}" = "0" ] || curl -sf "http://127.0.0.1:${WEBCRON_UI_PORT:-8080}/cgi-bin/status" >/dev/null; }'
 
-ENTRYPOINT ["/sbin/tini", "--", "webcron"]
+ENTRYPOINT ["webcron"]

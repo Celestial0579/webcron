@@ -209,8 +209,8 @@ pruefe_scheitert "das Weiterleitungsziel wurde nie angefragt" \
     log_enthaelt ziel 'GET /sekundaer'
 
 echo
-echo "--- crond-Betrieb (warte auf den ersten Takt, bis zu 90 s) ---"
-pruefe "crond ruft die URL nach Zeitplan auf" \
+echo "--- Zeitplan-Betrieb (warte auf den ersten Takt, bis zu 90 s) ---"
+pruefe "supercronic ruft die URL nach Zeitplan auf" \
     warte_auf_log ziel 'GET /takt' 90
 pruefe "der Aufruf steht als OK in den Container-Logs" \
     warte_auf_log webcron 'OK  *HTTP 200 .* http://ziel/takt' 30
@@ -230,6 +230,22 @@ pruefe_scheitert "kein Log von webcron nennt den Query-String mit Klammern (curl
     log_enthaelt webcron 'geheim3'
 pruefe_scheitert "kein Log von webcron meldet ein ungueltiges curl-Muster" \
     log_enthaelt webcron 'bad range'
+
+echo
+echo "--- Kein root-Prozess (#25) ---"
+# Nach dem Start laeuft kein Prozess mehr als root: supercronic (PID 1) als
+# webcron, die Status-UI als nobody. `ps` zeigt die Benutzernamen.
+prozesse() { "${COMPOSE[@]}" exec -T webcron ps -o user,pid,args; }
+prozesse > "$ARBEIT/prozesse.txt" || : > "$ARBEIT/prozesse.txt"
+pruefe "es laeuft ein supercronic" grep -q '[s]upercronic' "$ARBEIT/prozesse.txt"
+# Das `ps` selbst startet `docker exec` als root und taucht in der Liste auf.
+pruefe_scheitert "kein Prozess laeuft als root" \
+    sh -c "grep -v 'ps -o user' '$ARBEIT/prozesse.txt' | grep -q '^root'"
+pruefe "supercronic ist PID 1 und gehoert webcron" grep -Eq '^webcron +1 .*supercronic' "$ARBEIT/prozesse.txt"
+pruefe_scheitert "der Zeitplaner (webcron) kann die Konfiguration nicht lesen" \
+    "${COMPOSE[@]}" exec -T --user webcron webcron cat /tests/takt.cron
+pruefe "Gegenprobe: der Zeitplaner liest seine eigene Jobdatei" \
+    "${COMPOSE[@]}" exec -T --user webcron webcron cat /run/webcron/jobs/1
 
 echo
 echo "--- Status-UI ---"

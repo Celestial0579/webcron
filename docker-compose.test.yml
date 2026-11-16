@@ -24,13 +24,13 @@ services:
       WEBCRON_JOBS: /tests/takt.cron
     volumes:
       - testdaten:/tests:ro
-    # Haertung: nur das Noetige. crond wechselt je Job die Identitaet
-    # (SETUID/SETGID), httpd laeuft als "nobody".
+    # Haertung: nur das Noetige. Beim Start gibt webcron die root-Rechte ab
+    # (SETUID/SETGID): httpd laeuft als "nobody", der Zeitplaner als "webcron";
+    # danach gehoert keinem Prozess mehr root.
     read_only: true
     tmpfs:
       - /run
       - /tmp
-      - /etc/crontabs:mode=0755
     cap_drop: [ALL]
     cap_add: [SETUID, SETGID]
     security_opt:

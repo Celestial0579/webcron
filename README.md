@@ -12,7 +12,7 @@ WordPress sein `wp-cron.php`, Nextcloud sein `cron.php`, Shops ihre
 Export- und Aufräum-URLs. Billige Webhoster bieten dafür oft keinen
 Cronjob an — oder nur einen, in grobem Raster, über ein Webinterface.
 
-webcron schließt diese Lücke: Ein kleiner Container (Alpine, busybox-crond,
+webcron schließt diese Lücke: Ein kleiner Container (Alpine, supercronic,
 curl), der auf beliebiger eigener Hardware läuft — Heimserver, NAS,
 VPS — und die konfigurierten URLs nach echtem Cron-Zeitplan aufruft.
 
@@ -63,7 +63,7 @@ docker run -d --name webcron --restart unless-stopped \
   -e TZ=Europe/Berlin \
   -p 127.0.0.1:8080:8080 \
   -v "$PWD/jobs.cron:/config/jobs.cron:ro" \
-  --read-only --tmpfs /run --tmpfs /tmp --tmpfs /etc/crontabs:mode=0755 \
+  --read-only --tmpfs /run --tmpfs /tmp \
   --cap-drop ALL --cap-add SETUID --cap-add SETGID \
   --security-opt no-new-privileges:true \
   ghcr.io/celestial0579/webcron:latest
@@ -120,9 +120,9 @@ nennen nur die Namen, nie die Werte; Fehlermeldungen der Konfigurations-
 prüfung nennen nur Zeile und Art des Fehlers, nie Teile der Zeile. Die
 URL gilt wörtlich: `[` `]` `{` `}` (z. B. `filter[status]=offen`) wertet
 curl nicht als Muster aus. Weder Kopfzeilen noch URL stehen
-auf einer Kommandozeile (crond-Log, `ps`, `/proc`): Die Crontab nennt
+auf einer Kommandozeile (Zeitplaner-Log, `ps`, `/proc`): Die Crontab nennt
 je Job nur eine Nummer, URL und Kopfzeilen liegen in einer Datei, die
-nur root lesen kann, und curl bekommt sie über stdin.
+nur der Zeitplaner-Benutzer lesen kann, und curl bekommt sie über stdin.
 
 **Weiterleitungen:** Jobs *mit* Kopfzeilen folgen keiner Weiterleitung —
 sonst gingen die Secrets auch an fremde Hosts oder über http. Eine
@@ -141,7 +141,7 @@ Nach einer Änderung an `jobs.cron` den Container neu starten
 | `WEBCRON_USER_AGENT` | `webcron (+…)` | User-Agent der Aufrufe |
 | `WEBCRON_UI_PORT` | `8080` | Port der Status-UI, `0` schaltet sie ab |
 | `WEBCRON_JOBS` | `/config/jobs.cron` | Pfad der Konfigurationsdatei |
-| `WEBCRON_LOGLEVEL` | `8` | crond-Gesprächigkeit (kleiner = gesprächiger; die Job-Kommandozeile enthält nur die Jobnummer) |
+| `WEBCRON_LOGLEVEL` | `8` | Gesprächigkeit von supercronic: 8 = normal, kleiner = Fehlersuche (`-debug`), größer = nur Fehler (`-quiet`); die Job-Kommandozeile enthält nur die Jobnummer |
 
 ## Logs und Status-UI
 
@@ -183,11 +183,24 @@ nicht der Container.
   und, wenn `jobs.cron` wie oben nur root gehört, auch nicht diese
   Quelle (`/config` im Abbild ist `0700`, die Datei kommt als Einzeldatei
   hinein).
+- **Kein Dauerprozess läuft als root.** Der Container startet als root,
+  damit er die nur für root lesbare Konfiguration einlesen kann. Dann gibt
+  `webcron` die Rechte ab: Die Status-UI (httpd) läuft als `nobody`, der
+  Zeitplaner (supercronic, PID 1) und die Abrufe als `webcron` (UID 10001),
+  und kein Prozess behält root. Die Jobdateien mit den Secrets lesen nur
+  `webcron` und root; weder `nobody` (Status-UI) noch `webcron` lesen
+  `/config`. Mit der Compose-Datei bleibt nach dem Start auch keine
+  Capability übrig, und `no-new-privileges` verhindert, dass ein Prozess
+  neue Rechte erlangt.
 - Keine besonderen Rechte und kein beschreibbares Dateisystem außer
-  `/run`, `/tmp` und `/etc/crontabs`: Die Beispiele (Compose, `docker run`)
-  erzwingen das mit `read_only`, `tmpfs`, `cap_drop: ALL` (nur SETUID und
-  SETGID bleiben, crond wechselt je Job die Identität) und
-  `no-new-privileges`.
+  `/run` und `/tmp`: Die Beispiele (Compose, `docker run`) erzwingen das mit
+  `read_only`, `tmpfs`, `cap_drop: ALL` (nur SETUID und SETGID bleiben, für
+  den Rechtewechsel beim Start) und `no-new-privileges`. Auch ohne diese
+  Optionen (`docker run` ohne die Einschränkungen) laufen Zeitplaner, curl
+  und Status-UI nicht als root; empfohlen bleiben die Optionen trotzdem.
+- Die Syntax der Cron-Zeilen prüft webcron selbst (Wertebereiche, siehe
+  `--pruefen`); supercronic führt die geprüften Zeilen aus. Wie bisher gilt
+  bei gesetztem Monatstag *und* Wochentag: einer der beiden genügt.
 
 ## Tests
 
@@ -196,7 +209,7 @@ tests/integrationstest.sh
 ```
 
 baut das Abbild und prüft Konfigurationsprüfung, Einmal-Modus,
-einen echten crond-Takt und die Status-UI gegen einen
+einen echten Zeitplan-Takt (supercronic), dass kein Prozess als root läuft und die Status-UI gegen einen
 Wegwerf-Webserver — es wird keine echte fremde URL aufgerufen.
 Dasselbe läuft als GitHub-CI. Auf `main` veröffentlicht sie das Abbild als
 `ghcr.io/celestial0579/webcron`; Pull Requests bauen es nur.
