@@ -1,12 +1,12 @@
 #!/bin/sh
 # Ruft den Job mit der angegebenen Nummer auf, protokolliert das Ergebnis
-# und schreibt den Stand fuer die Status-UI fort. Wird von crond je
+# und schreibt den Stand fuer die Status-UI fort. Wird von supercronic je
 # Zeitplan-Takt gestartet.
 #
 # Aufruf: webcron-abruf --job <nr>
-# URL und Kopfzeilen stehen in $LAUFDIR/jobs/<nr> (nur fuer root lesbar,
+# URL und Kopfzeilen stehen in $LAUFDIR/jobs/<nr> (nur fuer den Dienst-Benutzer lesbar,
 # von `webcron` beim Start angelegt). Sie stehen absichtlich nirgends auf
-# einer Kommandozeile: crond loggt sie, und ueber /proc waeren sie in `ps`
+# einer Kommandozeile: supercronic protokolliert sie, und ueber /proc waeren sie in `ps`
 # sichtbar -- kein Platz fuer Secrets. Auch curl bekommt sie nicht als
 # Argumente, sondern als Konfiguration ueber stdin.
 set -u
@@ -43,8 +43,7 @@ TIMEOUT="${WEBCRON_TIMEOUT:-60}"
 VERSUCHE="${WEBCRON_VERSUCHE:-2}"
 AGENT="${WEBCRON_USER_AGENT:-webcron (+https://github.com/Celestial0579/webcron)}"
 
-# crond reicht die Ausgabe seiner Jobs nirgendwohin weiter — geloggt wird
-# deshalb direkt auf stdout/stderr von PID 1, denn dort lesen die
+# Geloggt wird direkt auf stdout/stderr von PID 1, denn dort lesen die
 # Container-Logs mit. Ausserhalb eines Containers: gewoehnliches stdout.
 OUT=/proc/1/fd/1
 ERR=/proc/1/fd/2
