@@ -46,7 +46,9 @@ echo "<p class=\"meta\">Zeitzone: $(html_schutz "${TZ:-UTC}") &middot; Stand: $(
 echo '<table><tr><th>Zeitplan</th><th>URL</th><th>Letzter Aufruf</th><th>Ergebnis</th><th>Dauer</th><th>OK</th><th>Fehler</th></tr>'
 
 while IFS="$TAB" read -r plan url koepfe nr; do
-    url_html=$(html_schutz "$url")
+    # Die URL ist schon maskiert (nur Schema und Host); die Jobnummer steht
+    # auch in den Container-Logs und ordnet beides einander zu.
+    url_html="Job $(html_schutz "$nr"): $(html_schutz "$url")"
     plan_html=$(html_schutz "$plan")
     # Kopfzeilen: nur die Namen zeigen — die Werte sind Secrets.
     kopf_namen=""

@@ -213,13 +213,13 @@ echo "--- Zeitplan-Betrieb (warte auf den ersten Takt, bis zu 90 s) ---"
 pruefe "supercronic ruft die URL nach Zeitplan auf" \
     warte_auf_log ziel 'GET /takt' 90
 pruefe "der Aufruf steht als OK in den Container-Logs" \
-    warte_auf_log webcron 'OK  *HTTP 200 .* http://ziel/takt' 30
+    warte_auf_log webcron 'OK  *HTTP 200 .* Job 1  http://ziel/\*\*\*' 30
 pruefe "auch der Kopfzeilen-Job kommt durch die Crontab (HTTP 200 auf /kopf)" \
-    warte_auf_log webcron 'OK  *HTTP 200 .* http://ziel/kopf' 30
+    warte_auf_log webcron 'OK  *HTTP 200 .* Job 5  http://ziel/\*\*\*' 30
 pruefe_scheitert "das Startprotokoll verraet den Header-Wert nicht" \
     log_enthaelt webcron 'geheim'
 pruefe "URL mit %-Kodierung kommt samt Kopfzeile an (Ziel antwortet 200)" \
-    warte_auf_log webcron 'OK  *HTTP 200 .* http://ziel/kopf?\*\*\*' 30
+    warte_auf_log webcron 'OK  *HTTP 200 .* Job 4  http://ziel/\*\*\*' 30
 pruefe "der Aufruf mit Query-String kam beim Ziel an" \
     warte_auf_log ziel 'GET /takt?token=geheim2' 30
 pruefe_scheitert "der Query-String steht in keinem Log von webcron (crond-Joblog eingeschlossen)" \
@@ -230,6 +230,12 @@ pruefe_scheitert "kein Log von webcron nennt den Query-String mit Klammern (curl
     log_enthaelt webcron 'geheim3'
 pruefe_scheitert "kein Log von webcron meldet ein ungueltiges curl-Muster" \
     log_enthaelt webcron 'bad range'
+# Auch der Pfad kann ein Secret sein (Drupal /cron/<key>, Webhook-IDs):
+# Logs und Status-UI nennen nur Schema und Host.
+pruefe_scheitert "kein Log von webcron nennt einen URL-Pfad" \
+    log_enthaelt webcron 'ziel/takt'
+pruefe_scheitert "kein Log von webcron nennt den Pfad eines Kopfzeilen-Jobs" \
+    log_enthaelt webcron 'ziel/kopf'
 
 echo
 echo "--- Kein root-Prozess (#25) ---"
@@ -264,7 +270,9 @@ pruefe "Gegenprobe: root liest die Konfigurationsdatei" \
 pruefe_scheitert "Dateisystem ist schreibgeschuetzt" \
     "${COMPOSE[@]}" exec -T webcron touch /usr/schreibtest
 pruefe "Statusseite antwortet" test -s "$ARBEIT/statusseite.html"
-pruefe "Statusseite zeigt den Job" grep -q "http://ziel/takt" "$ARBEIT/statusseite.html"
+pruefe "Statusseite zeigt den Job (Nummer, Schema und Host)" \
+    grep -q 'Job 1: http://ziel/\*\*\*' "$ARBEIT/statusseite.html"
+pruefe_scheitert "Statusseite nennt keinen URL-Pfad" grep -q "ziel/takt" "$ARBEIT/statusseite.html"
 pruefe "Statusseite zeigt das Ergebnis OK" grep -q "OK (HTTP 200)" "$ARBEIT/statusseite.html"
 
 echo

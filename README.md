@@ -145,12 +145,13 @@ Nach einer Änderung an `jobs.cron` den Container neu starten
 
 ## Logs und Status-UI
 
-Jeder Aufruf landet mit Zeit, HTTP-Code und Dauer in den Container-Logs:
+Jeder Aufruf landet mit Zeit, HTTP-Code, Dauer und Jobnummer in den Container-Logs. Die Nummer
+ist die Reihenfolge der Jobs in `jobs.cron`; von der URL stehen nur Schema und Host da:
 
 ```
 $ docker logs webcron
-2026-08-09 14:35:00  OK      HTTP 200  1s  https://example.com/wp-cron.php?***
-2026-08-09 14:40:02  FEHLER  HTTP 503  2s  https://example.com/wp-cron.php?***
+2026-08-09 14:35:00  OK      HTTP 200  1s  Job 1  https://example.com/***
+2026-08-09 14:40:02  FEHLER  HTTP 503  2s  Job 1  https://example.com/***
 ```
 
 Als `OK` zählt jede 2xx-Antwort (bei Jobs ohne Kopfzeilen auch 3xx), alles andere als `FEHLER`
@@ -169,10 +170,12 @@ nicht der Container.
 
 ## Sicherheit
 
-- Query-String und Zugangsdaten (`user:pw@`) in URLs werden in Logs und
-  Status-UI maskiert (`?***`) und stehen auf keiner Kommandozeile;
-  auch Fehlermeldungen von curl und der Konfigurationsprüfung geben sie
-  nicht preis. Trotzdem Geheimnisse bevorzugt als Kopfzeile übergeben.
+- Logs und Status-UI nennen von einer URL nur Schema und Host
+  (`https://example.com/***`). Pfad, Query-String und Zugangsdaten
+  (`user:pw@`) werden maskiert, denn auch der Pfad kann ein Secret tragen
+  (Drupal `/cron/<key>`, Webhook-IDs, Ping-UUIDs). Die URL steht auf keiner
+  Kommandozeile, und auch Fehlermeldungen von curl und der
+  Konfigurationsprüfung geben sie nicht preis. Trotzdem Geheimnisse bevorzugt als Kopfzeile übergeben.
   Wo möglich, der Anwendung ein eigenes Cron-Token geben, das nichts
   anderes kann.
 - Der einzige Port ist die Status-UI (ohne Anmeldung) — im LAN in
