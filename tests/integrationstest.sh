@@ -268,6 +268,25 @@ pruefe "Statusseite zeigt den Job" grep -q "http://ziel/takt" "$ARBEIT/statussei
 pruefe "Statusseite zeigt das Ergebnis OK" grep -q "OK (HTTP 200)" "$ARBEIT/statusseite.html"
 
 echo
+echo "--- Healthcheck (#28) ---"
+# Der Healthcheck ruft die Status-UI per su-exec als nobody ab. Auch mit
+# cap_drop ALL, SETUID/SETGID und no-new-privileges wie im Betrieb muss
+# Docker den Container als healthy melden.
+gesund() {  # gesund <sekunden>: wartet, bis Docker "healthy" meldet
+    local id stand="" i
+    id=$("${COMPOSE[@]}" ps -q webcron)
+    for ((i = 0; i < $1; i++)); do
+        stand=$(docker inspect -f '{{.State.Health.Status}}' "$id") || return 1
+        [[ $stand == healthy ]] && return 0
+        sleep 1
+    done
+    echo "Stand nach $1 s: $stand"
+    docker inspect -f '{{json .State.Health.Log}}' "$id"
+    return 1
+}
+pruefe "Docker meldet den Container als healthy" gesund 60
+
+echo
 if [[ $fehler -gt 0 ]]; then
     echo "ERGEBNIS: $fehler Pruefung(en) fehlgeschlagen"
     exit 1

@@ -34,7 +34,12 @@ RUN chmod -R a+rX /www && chmod 755 /www/cgi-bin/status
 # keinem Prozess mehr root, und supercronic ist PID 1. Der Container
 # veroeffentlicht von sich aus keinen Port und fuehrt nur die konfigurierten
 # Aufrufe aus.
+#
+# Der Healthcheck laeuft mit dem Benutzer des Containers, also als root. Den
+# Abruf der Status-UI macht er deshalb per su-exec als nobody (#28): Deren
+# Antwort wertet kein root-Prozess aus. Laeuft der Container ohne root, ruft
+# er curl direkt auf, wie bin/webcron beim Start.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD sh -c 'pidof supercronic >/dev/null && { [ "${WEBCRON_UI_PORT:-8080}" = "0" ] || curl -sf "http://127.0.0.1:${WEBCRON_UI_PORT:-8080}/cgi-bin/status" >/dev/null; }'
+    CMD sh -c 'pidof supercronic >/dev/null && { [ "${WEBCRON_UI_PORT:-8080}" = "0" ] || { if [ "$(id -u)" = 0 ]; then set -- su-exec nobody; fi; "$@" curl -sf "http://127.0.0.1:${WEBCRON_UI_PORT:-8080}/cgi-bin/status" >/dev/null; }; }'
 
 ENTRYPOINT ["webcron"]
