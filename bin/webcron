@@ -30,18 +30,19 @@ DROP=""
 # Benutzer, unter dem der Zeitplaner und die Abrufe laufen (siehe Dockerfile).
 DIENST_NUTZER="${WEBCRON_DIENST_NUTZER:-webcron}"
 
-# URL fuer Anzeige und Logs: Zugangsdaten (user:pw@) und Query-String
-# koennen Secrets tragen und werden maskiert.
+# URL fuer Anzeige und Logs: nur Schema und Host (samt Port). Zugangsdaten
+# (user:pw@), Pfad und Query-String koennen Secrets tragen -- etwa Drupal
+# /cron/<key>, Webhook-IDs oder Ping-UUIDs -- und werden maskiert.
 anzeige_url() {
     u="$1"
-    case "$u" in *\?*) u="${u%%\?*}?***" ;; esac
+    case "$u" in *://*) ;; *) printf '***'; return ;; esac
     schema="${u%%://*}"
     rest="${u#*://}"
-    auth="${rest%%/*}"
-    case "$auth" in
-        *@*) pfad="${rest#"$auth"}"; u="$schema://***@${auth#*@}$pfad" ;;
-    esac
-    printf '%s' "$u"
+    host="${rest%%[/?#]*}"
+    hinten="${rest#"$host"}"
+    case "$host" in *@*) host="***@${host##*@}" ;; esac
+    case "$hinten" in "" | "/") ;; *) hinten="/***" ;; esac
+    printf '%s://%s%s' "$schema" "$host" "$hinten"
 }
 
 fehler() { echo "webcron: $*" >&2; exit 1; }

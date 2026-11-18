@@ -11,18 +11,19 @@
 # Argumente, sondern als Konfiguration ueber stdin.
 set -u
 
-# URL fuer Anzeige und Logs: Zugangsdaten (user:pw@) und Query-String
-# koennen Secrets tragen und werden maskiert.
+# URL fuer Anzeige und Logs: nur Schema und Host (samt Port). Zugangsdaten
+# (user:pw@), Pfad und Query-String koennen Secrets tragen -- etwa Drupal
+# /cron/<key>, Webhook-IDs oder Ping-UUIDs -- und werden maskiert.
 anzeige_url() {
     u="$1"
-    case "$u" in *\?*) u="${u%%\?*}?***" ;; esac
+    case "$u" in *://*) ;; *) printf '***'; return ;; esac
     schema="${u%%://*}"
     rest="${u#*://}"
-    auth="${rest%%/*}"
-    case "$auth" in
-        *@*) pfad="${rest#"$auth"}"; u="$schema://***@${auth#*@}$pfad" ;;
-    esac
-    printf '%s' "$u"
+    host="${rest%%[/?#]*}"
+    hinten="${rest#"$host"}"
+    case "$host" in *@*) host="***@${host##*@}" ;; esac
+    case "$hinten" in "" | "/") ;; *) hinten="/***" ;; esac
+    printf '%s://%s%s' "$schema" "$host" "$hinten"
 }
 
 [ "${1:-}" = "--job" ] || { echo "Aufruf: webcron-abruf --job <nr>" >&2; exit 2; }
@@ -68,7 +69,7 @@ else
     folgen="--location --max-redirs 10 --proto-redir $protokolle"
 fi
 
-# curl-Fehlermeldungen koennen die URL enthalten (Query-String, user:pw@).
+# curl-Fehlermeldungen koennen die URL enthalten (Pfad, Query-String, user:pw@).
 # stderr geht deshalb erst in eine Datei und wird maskiert weitergereicht.
 # `--globoff` verhindert zudem, dass curl [..] und {..} in der URL als Muster
 # auswertet (ein ungueltiges Muster liess curl die ganze URL ausgeben, ein
@@ -80,8 +81,10 @@ FEHLDATEI=$(mktemp "$LAUFDIR/curl-fehler.XXXXXX") || {
     exit 2
 }
 trap 'rm -f "$FEHLDATEI"' EXIT
+# userinfo endet am letzten @ vor Pfad, Query oder Fragment, wie in anzeige_url():
+# Ein rohes @ im Passwort bliebe sonst teilweise stehen (GHSA-93c5-5rf4-h2vh).
 maskiere() {
-    sed -E 's#(://)[^/@[:space:]]*@#\1***@#g; s#\?[^[:space:]]*#?***#g'
+    sed -E 's|(://)[^/?#[:space:]]*@|\1***@|g; s|(://[^/?#[:space:]]*)[/?#][^[:space:]]*|\1/***|g; s|\?[^[:space:]]*|?***|g'
 }
 
 start=$(date +%s)
@@ -129,9 +132,9 @@ printf '%s\t%s\t%s\t%s\t%s\t%s\n' \
 
 anzeige=$(anzeige_url "$URL")
 if [ "$ergebnis" = OK ]; then
-    echo "$zeit  OK      HTTP $code  ${dauer}s  $anzeige" >> "$OUT"
+    echo "$zeit  OK      HTTP $code  ${dauer}s  Job $JOB  $anzeige" >> "$OUT"
 else
-    echo "$zeit  FEHLER  HTTP $code  ${dauer}s  $anzeige" >> "$ERR"
+    echo "$zeit  FEHLER  HTTP $code  ${dauer}s  Job $JOB  $anzeige" >> "$ERR"
     case "$code" in
         3*) echo "$zeit  Weiterleitung nach $(anzeige_url "$weiter") nicht befolgt: Jobs mit Kopfzeilen folgen keiner Weiterleitung, die URL in der Konfiguration anpassen" >> "$ERR" ;;
     esac
