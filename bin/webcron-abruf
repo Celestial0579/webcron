@@ -81,8 +81,10 @@ FEHLDATEI=$(mktemp "$LAUFDIR/curl-fehler.XXXXXX") || {
     exit 2
 }
 trap 'rm -f "$FEHLDATEI"' EXIT
+# userinfo endet am letzten @ vor Pfad, Query oder Fragment, wie in anzeige_url():
+# Ein rohes @ im Passwort bliebe sonst teilweise stehen (GHSA-93c5-5rf4-h2vh).
 maskiere() {
-    sed -E 's|(://)[^/@[:space:]]*@|\1***@|g; s|(://[^/?#[:space:]]*)[/?#][^[:space:]]*|\1/***|g; s|\?[^[:space:]]*|?***|g'
+    sed -E 's|(://)[^/?#[:space:]]*@|\1***@|g; s|(://[^/?#[:space:]]*)[/?#][^[:space:]]*|\1/***|g; s|\?[^[:space:]]*|?***|g'
 }
 
 start=$(date +%s)

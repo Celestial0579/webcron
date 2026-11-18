@@ -236,6 +236,17 @@ pruefe_scheitert "kein Log von webcron nennt einen URL-Pfad" \
     log_enthaelt webcron 'ziel/takt'
 pruefe_scheitert "kein Log von webcron nennt den Pfad eines Kopfzeilen-Jobs" \
     log_enthaelt webcron 'ziel/kopf'
+# maskiere() bereinigt curls Fehlerausgabe. Geprueft wird die Funktion aus dem
+# Abbild mit dessen sed: userinfo endet am letzten @, ein rohes @ im Passwort
+# bleibt nicht teilweise stehen.
+# shellcheck disable=SC2016
+maskiert() {  # maskiert <text>: Ausgabe von maskiere() aus webcron-abruf
+    "${COMPOSE[@]}" exec -T webcron sh -c \
+        'eval "$(sed -n "/^maskiere() {/,/^}/p" /usr/local/bin/webcron-abruf)"; printf "%s\n" "$1" | maskiere' \
+        sh "$1"
+}
+pruefe "maskiere() schneidet userinfo am letzten @ ab (rohes @ im Passwort)" \
+    test "$(maskiert 'curl: (6) https://nutzer:p@ss@h.example/pfad?x=1')" = 'curl: (6) https://***@h.example/***'
 
 echo
 echo "--- Kein root-Prozess (#25) ---"
